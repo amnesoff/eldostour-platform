@@ -1,0 +1,23 @@
+{
+  "name": "منصة الدستور التعليمية - كلية الحقوق جامعة مدينة السادات",
+  "short_name": "منصة الدستور",
+  "description": "البوابة الأكاديمية الشاملة لطلاب كلية الحقوق جامعة مدينة السادات",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#070c18",
+  "theme_color": "#0B132B",
+  "dir": "rtl",
+  "lang": "ar",
+  "icons": [
+    {
+      "src": "/logo.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/logo.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

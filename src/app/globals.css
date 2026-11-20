@@ -1,0 +1,218 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-cairo: var(--font-cairo);
+  --color-gold-50: #fdfaf3;
+  --color-gold-100: #f9f2dc;
+  --color-gold-200: #f1e2b3;
+  --color-gold-300: #e7cf85;
+  --color-gold-400: #dab757;
+  --color-gold-500: #c99c32;
+  --color-gold-600: #af7f26;
+  --color-gold-700: #8c5f21;
+  --color-gold-800: #724c20;
+  --color-gold-900: #5f3f1e;
+  --color-navy-950: #060b18;
+  --color-navy-900: #0B132B;
+  --color-navy-800: #141f3d;
+  --color-navy-700: #1C2541;
+  --color-navy-600: #29385d;
+}
+
+/* =======================================================================
+   Student Gender Color Palettes (Blue vs Burgundy)
+   ======================================================================= */
+
+/* 1. Blue Theme (طالب - Academic Royal Blue) */
+:root, [data-gender="blue"] {
+  --theme-primary: #1d4ed8;
+  --theme-primary-hover: #1e40af;
+  --theme-primary-light: #eff6ff;
+  --theme-accent: #d97706;
+  --theme-badge-bg: #dbeafe;
+  --theme-badge-text: #1e40af;
+  --theme-border: #bfdbfe;
+  --theme-glow: rgba(37, 99, 235, 0.25);
+  --theme-gradient: linear-gradient(135deg, #1d4ed8, #2563eb, #3b82f6);
+}
+
+.dark[data-gender="blue"], .dark:not([data-gender="burgundy"]) {
+  --theme-primary: #3b82f6;
+  --theme-primary-hover: #60a5fa;
+  --theme-primary-light: #1e3a8a30;
+  --theme-accent: #f59e0b;
+  --theme-badge-bg: #1e3a8a60;
+  --theme-badge-text: #93c5fd;
+  --theme-border: #1e3a8a80;
+  --theme-glow: rgba(59, 130, 246, 0.35);
+  --theme-gradient: linear-gradient(135deg, #1e40af, #2563eb, #3b82f6);
+}
+
+/* 2. Burgundy Theme (طالبة - Rich Royal Burgundy) */
+[data-gender="burgundy"] {
+  --theme-primary: #800020;
+  --theme-primary-hover: #5c0a1e;
+  --theme-primary-light: #fff1f2;
+  --theme-accent: #d97706;
+  --theme-badge-bg: #ffe4e6;
+  --theme-badge-text: #800020;
+  --theme-border: #fecdd3;
+  --theme-glow: rgba(128, 0, 32, 0.25);
+  --theme-gradient: linear-gradient(135deg, #800020, #9b1b30, #be123c);
+}
+
+.dark[data-gender="burgundy"] {
+  --theme-primary: #9b1b30;
+  --theme-primary-hover: #be123c;
+  --theme-primary-light: #4c051935;
+  --theme-accent: #f59e0b;
+  --theme-badge-bg: #4c051970;
+  --theme-badge-text: #fecdd3;
+  --theme-border: #80002070;
+  --theme-glow: rgba(155, 27, 48, 0.35);
+  --theme-gradient: linear-gradient(135deg, #5c0a1e, #800020, #9b1b30);
+}
+
+:root {
+  --background: #f8fafc;
+  --foreground: #0f172a;
+}
+
+.dark {
+  --background: #080d1a;
+  --foreground: #f1f5f9;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-cairo), system-ui, -apple-system, sans-serif;
+  overflow-x: hidden !important;
+  width: 100%;
+}
+
+/* Font scale accessibility */
+[data-font-size="sm"] { font-size: 14px; }
+[data-font-size="normal"] { font-size: 16px; }
+[data-font-size="lg"] { font-size: 18px; }
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+.dark ::-webkit-scrollbar-thumb {
+  background: #334155;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}
+
+/* =======================================================================
+   Occasion Themes Animations (Ramadan Lanterns Sway & New Year Snowfall)
+   ======================================================================= */
+/* =======================================================================
+   Immersive Seasonal Themes (Ramadan Luxury, Valentine, New Year, Exams)
+   ======================================================================= */
+
+/* A. Ramadan Luxury Theme (Deep Dark Espresso Brown #1A0F0A + Rich Gold #D4AF37) */
+html[data-occasion-theme="ramadan"],
+[data-occasion-theme="ramadan"] {
+  --theme-gold: #d4af37;
+  --theme-gold-glow: rgba(212, 175, 55, 0.25);
+}
+.dark[data-occasion-theme="ramadan"] body,
+html[data-occasion-theme="ramadan"].dark body {
+  background-color: #140b07 !important;
+  background-image: radial-gradient(circle at 50% 0%, rgba(212, 175, 55, 0.12) 0%, transparent 60%),
+                    radial-gradient(circle at 100% 100%, rgba(180, 83, 9, 0.08) 0%, transparent 50%) !important;
+}
+
+/* B. Valentine's Day Theme (Romantic Deep Crimson #19050D + Soft Rose) */
+html[data-occasion-theme="valentine"],
+[data-occasion-theme="valentine"] {
+  --theme-rose: #f43f5e;
+}
+.dark[data-occasion-theme="valentine"] body,
+html[data-occasion-theme="valentine"].dark body {
+  background-color: #18040d !important;
+  background-image: radial-gradient(circle at 50% 0%, rgba(244, 63, 94, 0.12) 0%, transparent 60%),
+                    radial-gradient(circle at 0% 100%, rgba(155, 27, 48, 0.09) 0%, transparent 50%) !important;
+}
+
+/* C. New Year Theme (Festive Midnight Blue #050d1e + Silver & Gold) */
+.dark[data-occasion-theme="new_year"] body,
+html[data-occasion-theme="new_year"].dark body {
+  background-color: #040918 !important;
+  background-image: radial-gradient(circle at 50% 0%, rgba(56, 189, 248, 0.10) 0%, transparent 60%),
+                    radial-gradient(circle at 100% 100%, rgba(234, 179, 8, 0.06) 0%, transparent 50%) !important;
+}
+
+/* D. Exam Season Theme (High Focus Deep Navy #060b18 + Amber Alert Glow) */
+.dark[data-occasion-theme="exams"] body,
+html[data-occasion-theme="exams"].dark body {
+  background-color: #060b18 !important;
+  background-image: radial-gradient(circle at 50% 0%, rgba(245, 158, 11, 0.09) 0%, transparent 60%) !important;
+}
+
+@keyframes lanternSway {
+  0%, 100% {
+    transform: rotate(-4deg);
+    transform-origin: top center;
+  }
+  50% {
+    transform: rotate(4deg);
+    transform-origin: top center;
+  }
+}
+
+.animate-sway {
+  animation: lanternSway 3.5s ease-in-out infinite;
+}
+
+.animate-sway-slow {
+  animation: lanternSway 4.8s ease-in-out infinite reverse;
+}
+
+@keyframes snowFall {
+  0% {
+    transform: translateY(-10px) rotate(0deg);
+    opacity: 0.9;
+  }
+  100% {
+    transform: translateY(105vh) rotate(360deg);
+    opacity: 0.2;
+  }
+}
+
+.snowflake {
+  position: fixed;
+  top: -20px;
+  color: #fff;
+  user-select: none;
+  pointer-events: none;
+  z-index: 30;
+  animation: snowFall linear infinite;
+}
+
+/* Typewriter blinking cursor */
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.cursor-blink {
+  animation: blink 1s step-end infinite;
+}
