@@ -7,6 +7,7 @@ import {
   X,
   Share2,
   CheckCircle2,
+  Check,
   Sparkles,
   Printer,
   Scale,
@@ -15,7 +16,9 @@ import {
   AlertCircle,
   GraduationCap,
   Camera,
+  Trash2,
 } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
 import { AnimatedLogo } from '@/components/ui/AnimatedLogo';
 import { useTheme } from '@/context/ThemeContext';
 import { useStudentAuth } from '@/context/StudentAuthContext';
@@ -65,7 +68,7 @@ export function DigitalStudentIdCard({ isOpen, onClose }: DigitalStudentIdCardPr
         localStorage.setItem('eldostour_student_id_num', savedId);
       }
 
-      setStudentName(savedName || 'طالب زائر - حقوق السادات');
+      setStudentName(savedName || 'طالب زائر');
       setYear((savedYear >= 1 && savedYear <= 4 ? savedYear : 1) as AcademicYearId);
       setStudentIdNumber(savedId);
       setStudentEmail('');
@@ -119,7 +122,7 @@ export function DigitalStudentIdCard({ isOpen, onClose }: DigitalStudentIdCardPr
       try {
         await navigator.share({
           title: `بطاقة طالب منصة الدستور - ${studentName}`,
-          text: `بطاقتي الأكاديمية الرقمية بكلية الحقوق جامعة مدينة السادات - منصة الدستور التعليمية (${currentYearObj.name} - ${studyType}) - رقم القيد: ${studentIdNumber}`,
+          text: `بطاقتي الأكاديمية الرقمية - منصة الدستور التعليمية (${currentYearObj.name} - ${studyType}) - رقم القيد: ${studentIdNumber}`,
           url: typeof window !== 'undefined' ? window.location.origin : '',
         });
       } catch {
@@ -127,7 +130,7 @@ export function DigitalStudentIdCard({ isOpen, onClose }: DigitalStudentIdCardPr
       }
     } else {
       await navigator.clipboard.writeText(
-        `بطاقة الطالب: ${studentName} - ${currentYearObj.name} (${studyType}) - كلية الحقوق جامعة مدينة السادات - منصة الدستور التعليمية (رقم القيد: ${studentIdNumber})`
+        `بطاقة الطالب: ${studentName} - ${currentYearObj.name} (${studyType}) - منصة الدستور التعليمية (رقم القيد: ${studentIdNumber})`
       );
       setCopied(true);
       setTimeout(() => setCopied(false), 2500);
@@ -136,6 +139,24 @@ export function DigitalStudentIdCard({ isOpen, onClose }: DigitalStudentIdCardPr
 
   const handlePrint = () => {
     window.print();
+  };
+
+  const handleDeleteMyAccount = async () => {
+    if (!student || isGuest) return;
+    const confirm1 = window.confirm(
+      'هل أنت متأكد من رغبتك في حذف حسابك وبياناتك الشخصية نهائياً من منصة الدستور وفقاً للمادة 17 من العقد القانوني (قانون 151 لسنة 2020)؟ سيتم شطب حسابك فورياً.'
+    );
+    if (!confirm1) return;
+
+    try {
+      await supabase.from('students').delete().eq('id', student.id);
+      localStorage.clear();
+      sessionStorage.clear();
+      alert('تم حذف حسابك وبياناتك الشخصية بنجاح.');
+      window.location.reload();
+    } catch (err: any) {
+      alert('فشل حذف الحساب: ' + (err?.message || 'خطأ غير متوقع'));
+    }
   };
 
   if (!isOpen) return null;
@@ -220,22 +241,20 @@ export function DigitalStudentIdCard({ isOpen, onClose }: DigitalStudentIdCardPr
                 <button
                   type="button"
                   onClick={() => handleSaveInfo(studentName, year, 'انتظام')}
-                  className={`flex-1 h-8 rounded-lg font-bold transition-all text-xs ${
-                    studyType === 'انتظام'
-                      ? 'bg-amber-500 text-slate-950 shadow-sm'
-                      : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700'
-                  }`}
+                  className={`flex-1 h-8 rounded-lg font-bold transition-all text-xs ${studyType === 'انتظام'
+                    ? 'bg-amber-500 text-slate-950 shadow-sm'
+                    : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700'
+                    }`}
                 >
                   انتظام
                 </button>
                 <button
                   type="button"
                   onClick={() => handleSaveInfo(studentName, year, 'انتساب')}
-                  className={`flex-1 h-8 rounded-lg font-bold transition-all text-xs ${
-                    studyType === 'انتساب'
-                      ? 'bg-amber-500 text-slate-950 shadow-sm'
-                      : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700'
-                  }`}
+                  className={`flex-1 h-8 rounded-lg font-bold transition-all text-xs ${studyType === 'انتساب'
+                    ? 'bg-amber-500 text-slate-950 shadow-sm'
+                    : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700'
+                    }`}
                 >
                   انتساب
                 </button>
@@ -291,11 +310,10 @@ export function DigitalStudentIdCard({ isOpen, onClose }: DigitalStudentIdCardPr
             <div
               ref={cardRef}
               id="printable-student-card"
-              className={`relative rounded-3xl p-5 sm:p-6 shadow-2xl text-white border overflow-hidden select-none transition-all ${
-                isFemale
-                  ? 'bg-gradient-to-br from-[#4A0818] via-[#75001C] to-[#25030A] border-rose-400/40'
-                  : 'bg-gradient-to-br from-[#0B1B3D] via-[#0F295A] to-[#060D1E] border-amber-400/40'
-              }`}
+              className={`relative rounded-3xl p-5 sm:p-6 shadow-2xl text-white border overflow-hidden select-none transition-all ${isFemale
+                ? 'bg-gradient-to-br from-[#4A0818] via-[#75001C] to-[#25030A] border-rose-400/40'
+                : 'bg-gradient-to-br from-[#0B1B3D] via-[#0F295A] to-[#060D1E] border-amber-400/40'
+                }`}
             >
               {/* Subtle Guilloche / Geometric Background Pattern */}
               <div className="absolute -right-12 -top-12 w-48 h-48 rounded-full bg-white/5 blur-xl pointer-events-none" />
@@ -317,14 +335,21 @@ export function DigitalStudentIdCard({ isOpen, onClose }: DigitalStudentIdCardPr
                 </div>
 
                 <div className="text-left">
-                  <span
-                    className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full font-black text-[10px] shadow-sm ${
-                      isRegistered ? 'bg-amber-400 text-slate-950' : 'bg-slate-800 text-amber-300 border border-amber-400/30'
-                    }`}
-                  >
-                    <Sparkles className="w-2.5 h-2.5" />
-                    <span>{isRegistered ? 'بطاقة طالب معتمدة' : 'معاينة زائر'}</span>
-                  </span>
+                  <div className="flex items-center gap-1 justify-end flex-wrap">
+                    {student?.is_verified && (
+                      <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full bg-cyan-400 text-slate-950 font-black text-[9px] shadow-sm">
+                        <Check className="w-2.5 h-2.5" />
+                        <span>عضو معتمد رسمياً ✓</span>
+                      </span>
+                    )}
+                    <span
+                      className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full font-black text-[10px] shadow-sm ${isRegistered ? 'bg-amber-400 text-slate-950' : 'bg-slate-800 text-amber-300 border border-amber-400/30'
+                        }`}
+                    >
+                      <Sparkles className="w-2.5 h-2.5" />
+                      <span>{isRegistered ? 'بطاقة طالب معتمدة' : 'معاينة زائر'}</span>
+                    </span>
+                  </div>
                   <span className="block text-[10px] text-amber-300 mt-0.5 font-mono font-bold" dir="ltr">
                     ID: {studentIdNumber}
                   </span>
@@ -374,8 +399,8 @@ export function DigitalStudentIdCard({ isOpen, onClose }: DigitalStudentIdCardPr
                           ? 'طالبة انتساب 🟣'
                           : 'طالبة انتظام 🟣'
                         : studyType === 'انتساب'
-                        ? 'طالب انتساب 🔵'
-                        : 'طالب انتظام 🔵'}
+                          ? 'طالب انتساب 🔵'
+                          : 'طالب انتظام 🔵'}
                     </span>
 
                     {studentEmail && (
@@ -428,12 +453,26 @@ export function DigitalStudentIdCard({ isOpen, onClose }: DigitalStudentIdCardPr
               </button>
             </div>
 
-            <button
-              onClick={onClose}
-              className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 cursor-pointer"
-            >
-              إغلاق
-            </button>
+            <div className="flex items-center gap-2">
+              {student && !isGuest && (
+                <button
+                  type="button"
+                  onClick={handleDeleteMyAccount}
+                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-rose-500 hover:text-rose-400 hover:bg-rose-500/10 text-[10px] font-bold border border-rose-500/20 transition-all cursor-pointer"
+                  title="حق محو البيانات وحذف الحساب نهائياً طبقاً للمادة 17 من العقد"
+                >
+                  <Trash2 className="w-3 h-3" />
+                  <span>حذف حسابي وبياناتي نهائياً (حماية البيانات)</span>
+                </button>
+              )}
+
+              <button
+                onClick={onClose}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 cursor-pointer"
+              >
+                إغلاق
+              </button>
+            </div>
           </div>
         </motion.div>
       </div>

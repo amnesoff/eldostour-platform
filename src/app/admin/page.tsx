@@ -5,7 +5,7 @@ export const revalidate = 0;
 
 export const metadata = {
   title: 'لوحة التحكم المركزية | منصة الدستور التعليمية',
-  description: 'لوحة تحكم المشرفين لمنصة الدستور التعليمية - كلية الحقوق جامعة مدينة السادات',
+  description: 'لوحة تحكم المشرفين لمنصة الدستور التعليمية',
   robots: {
     index: false,
     follow: false,
@@ -13,5 +13,5 @@ export const metadata = {
 };
 
 export default function AdminPage() {
-  return <AdminDashboardClient />;
+  return <AdminDashboardClient isDirectAdminRoute={true} />;
 }

@@ -72,7 +72,7 @@ export function FloatingWidgets({ settings }: FloatingWidgetsProps) {
   const cleanPhone = rawPhone.replace(/\D/g, '');
   const formattedPhone = cleanPhone.startsWith('0') ? `2${cleanPhone}` : cleanPhone;
   const whatsappUrl = `https://wa.me/${formattedPhone}?text=${encodeURIComponent(
-    settings?.whatsapp_message || 'مرحباً، أود الاستفسار بخصوص منصة الدستور - حقوق السادات'
+    settings?.whatsapp_message || 'مرحباً، أود الاستفسار بخصوص منصة الدستور التعليمية'
   )}`;
 
   return (

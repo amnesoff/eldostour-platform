@@ -14,5 +14,5 @@ export const metadata = {
 };
 
 export default function AdminPage() {
-  return <AdminDashboardClient />;
+  return <AdminDashboardClient isDirectAdminRoute={true} />;
 }

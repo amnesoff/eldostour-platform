@@ -1,8 +1,8 @@
 import { AcademicYearInfo, TeamMember, SiteSettings, SiteSection } from '@/types';
 
 export const PLATFORM_NAME = 'منصة الدستور التعليمية';
-export const COLLEGE_NAME = 'كلية الحقوق - جامعة مدينة السادات';
-export const PLATFORM_SUBTITLE = 'البوابة الأكاديمية الشاملة لطلاب كلية الحقوق بجامعة مدينة السادات';
+export const COLLEGE_NAME = 'كلية الحقوق';
+export const PLATFORM_SUBTITLE = 'البوابة الأكاديمية المستقلة الشاملة لطلاب القانون والعلوم الحقوقية';
 
 export const ACADEMIC_YEARS: AcademicYearInfo[] = [
   {
@@ -63,14 +63,14 @@ export const TEAM_CREDITS: TeamMember[] = [
 export const LEADERSHIP_BAR_TEXT = 'إشراف وتأسيس: مازن شكري • رحمة علاء • وليد محرم';
 
 export const DEFAULT_SITE_SETTINGS: SiteSettings = {
-  college_name: 'كلية الحقوق - جامعة مدينة السادات',
+  college_name: 'كلية الحقوق',
   platform_name: 'منصة الدستور التعليمية',
   hero_title: 'منصة الدستور التعليمية',
-  hero_subtitle: 'البوابة الأكاديمية المتكاملة لطلاب كلية الحقوق - جامعة مدينة السادات',
+  hero_subtitle: 'البوابة الأكاديمية المتكاملة للعلوم القانونية ومحاضرات الحقوق',
   leadership_text: LEADERSHIP_BAR_TEXT,
   active_occasion_theme: 'default',
   whatsapp_number: '201000000000',
-  whatsapp_message: 'مرحباً، أود الاستفسار عن محاضرات ومنصة الدستور - حقوق السادات',
+  whatsapp_message: 'مرحباً، أود الاستفسار عن محاضرات وخدمات منصة الدستور التعليمية',
   whatsapp_enabled: true,
   social_facebook: 'https://facebook.com',
   social_telegram: 'https://t.me',

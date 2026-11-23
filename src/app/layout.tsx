@@ -5,7 +5,7 @@ import { ThemeProvider } from '@/context/ThemeContext';
 import { StudentAuthProvider } from '@/context/StudentAuthContext';
 import { StudentAuthModal } from '@/components/auth/StudentAuthModal';
 import { StudentIdFloatingButton } from '@/components/tools/StudentIdFloatingButton';
-import { COLLEGE_NAME } from '@/lib/constants';
+import { PrivacyBanner } from '@/components/legal/PrivacyBanner';
 
 const cairo = Cairo({
   subsets: ['arabic', 'latin'],
@@ -15,15 +15,14 @@ const cairo = Cairo({
 });
 
 export const metadata: Metadata = {
-  title: 'منصة الدستور التعليمية | كلية الحقوق - جامعة مدينة السادات',
-  description: `البوابة الأكاديمية المتكاملة لطلاب ${COLLEGE_NAME} - محاضرات، ملخصات وفيديوهات للفرق الدراسية الأربعة`,
+  title: 'منصة الدستور التعليمية | المنصة الأكاديمية المستقلة للعلوم القانونية',
+  description: 'البوابة الأكاديمية المستقلة الشاملة لطلاب القانون والعلوم الحقوقية - محاضرات، ملخصات واختبارات تفاعلية للفرق الدراسية الأربعة',
   keywords: [
     'كلية الحقوق',
-    'جامعة مدينة السادات',
-    'حقوق السادات',
     'منصة الدستور',
-    'جروب الدستور',
+    'منصة الدستور التعليمية',
     'محاضرات قانونية',
+    'ملخصات قانونية',
     'الفرقة الأولى',
     'الفرقة الثانية',
     'الفرقة الثالثة',
@@ -61,6 +60,7 @@ export default function RootLayout({
             {children}
             <StudentAuthModal />
             <StudentIdFloatingButton />
+            <PrivacyBanner />
           </StudentAuthProvider>
         </ThemeProvider>
       </body>

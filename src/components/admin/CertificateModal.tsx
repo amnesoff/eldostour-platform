@@ -35,7 +35,7 @@ export function CertificateModal({ data, onClose }: CertificateModalProps) {
   const cleanPhone = data.studentPhone ? data.studentPhone.replace(/\D/g, '') : '';
   const formattedPhone = cleanPhone.startsWith('0') ? `2${cleanPhone}` : cleanPhone;
   const waCelebrationText = encodeURIComponent(
-    `السلام عليكم ورحمة الله وبركاته،\nنبارك للطالب المتميز: ${data.studentName} (${yearObj.name}) تفوقه المستحق وحصوله على درجة ${data.score} من ${data.totalScore} بنسبة ${data.percentage}% في "${data.quizTitle}" على منصة الدستور التعليمية - كلية الحقوق جامعة مدينة السادات 🌟\nتم إرفاق شهادة التقدير الرسمية.\nمع أطيب تمنياتنا بدوام التميز.\n${LEADERSHIP_BAR_TEXT}`
+    `السلام عليكم ورحمة الله وبركاته،\nنبارك للطالب المتميز: ${data.studentName} (${yearObj.name}) تفوقه المستحق وحصوله على درجة ${data.score} من ${data.totalScore} بنسبة ${data.percentage}% في "${data.quizTitle}" على منصة الدستور التعليمية للعلوم القانونية 🌟\nتم إرفاق شهادة التقدير الرسمية.\nمع أطيب تمنياتنا بدوام التميز.\n${LEADERSHIP_BAR_TEXT}`
   );
 
   const handlePrint = () => {
@@ -43,7 +43,7 @@ export function CertificateModal({ data, onClose }: CertificateModalProps) {
   };
 
   const handleCopyLink = async () => {
-    const text = `شهادة تفوق الطالب ${data.studentName} - ${data.quizTitle} بنسبة ${data.percentage}% - كلية الحقوق جامعة مدينة السادات (${LEADERSHIP_BAR_TEXT})`;
+    const text = `شهادة تفوق الطالب ${data.studentName} - ${data.quizTitle} بنسبة ${data.percentage}% - منصة الدستور التعليمية (${LEADERSHIP_BAR_TEXT})`;
     await navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2500);
@@ -152,7 +152,7 @@ export function CertificateModal({ data, onClose }: CertificateModalProps) {
               {/* Certificate Body */}
               <div className="relative z-10 text-center my-auto py-4">
                 <span className="text-xs sm:text-sm uppercase tracking-widest text-amber-300/80 font-bold block mb-1">
-                  جمهورية مصر العربية • جامعة مدينة السادات
+                  جمهورية مصر العربية • منصة الدستور التعليمية
                 </span>
 
                 <h2 className="text-2xl sm:text-4xl font-black bg-gradient-to-r from-amber-200 via-yellow-400 to-amber-500 bg-clip-text text-transparent mb-3 font-serif">
@@ -197,7 +197,7 @@ export function CertificateModal({ data, onClose }: CertificateModalProps) {
                   </div>
                   <div>
                     <span className="block font-black text-amber-400 text-[11px]">الختم الرقمي المعتمد</span>
-                    <span className="text-[9px] text-slate-400">منصة الدستور - حقوق السادات</span>
+                    <span className="text-[9px] text-slate-400">منصة الدستور التعليمية</span>
                   </div>
                 </div>
 

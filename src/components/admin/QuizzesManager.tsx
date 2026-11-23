@@ -638,7 +638,7 @@ export function QuizzesManager({ subjects, onRefresh }: QuizzesManagerProps) {
                   const cleanPhone = sub.student_phone ? sub.student_phone.replace(/\D/g, '') : '';
                   const formattedPhone = cleanPhone.startsWith('0') ? `2${cleanPhone}` : cleanPhone;
                   const waText = encodeURIComponent(
-                    `مبارك للطالب المتميز ${sub.student_name}! 🎉 نبارك لك تفوقك واجتيازك ${sub.quizzes?.title || 'الاختبار'} بدرجة ${sub.score} من ${sub.total_score} بنسبة ${sub.percentage}% على منصة الدستور التعليمية - كلية الحقوق جامعة مدينة السادات. ⚖️ إشراف وتأسيس: مازن شكري • رحمة علاء • وليد محرم.`
+                    `مبارك للطالب المتميز ${sub.student_name}! 🎉 نبارك لك تفوقك واجتيازك ${sub.quizzes?.title || 'الاختبار'} بدرجة ${sub.score} من ${sub.total_score} بنسبة ${sub.percentage}% على منصة الدستور التعليمية للعلوم القانونية. ⚖️ إشراف وتأسيس: مازن شكري • رحمة علاء • وليد محرم.`
                   );
 
                   return (

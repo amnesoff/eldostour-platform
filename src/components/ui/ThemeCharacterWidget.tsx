@@ -143,9 +143,8 @@ export function ThemeCharacterWidget({ initialSettings }: ThemeCharacterWidgetPr
   return (
     <div
       dir="rtl"
-      className={`fixed bottom-36 sm:bottom-40 md:bottom-32 z-40 select-none pointer-events-none transition-all duration-500 ${
-        isRight ? 'right-2 sm:right-6 md:right-8' : 'left-2 sm:left-6 md:left-8'
-      }`}
+      className={`fixed bottom-36 sm:bottom-40 md:bottom-32 z-40 select-none pointer-events-none transition-all duration-500 ${isRight ? 'right-2 sm:right-6 md:right-8' : 'left-2 sm:left-6 md:left-8'
+        }`}
     >
       <AnimatePresence>
         {isVisible && (
@@ -180,11 +179,10 @@ export function ThemeCharacterWidget({ initialSettings }: ThemeCharacterWidgetPr
               initial={{ opacity: 0, y: 15, scale: 0.8 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               transition={{ delay: 0.2 }}
-              className={`relative mb-1 px-3.5 py-2.5 max-w-[190px] sm:max-w-[240px] rounded-2xl shadow-2xl backdrop-blur-md text-right border ${
-                isGirlSign
-                  ? 'bg-amber-950/90 text-amber-200 border-amber-500/50 shadow-amber-500/20'
-                  : 'bg-slate-900/95 text-white border-amber-400/50 shadow-slate-950/60'
-              }`}
+              className={`relative mb-1 px-3.5 py-2.5 max-w-[190px] sm:max-w-[240px] rounded-2xl shadow-2xl backdrop-blur-md text-right border ${isGirlSign
+                ? 'bg-amber-950/90 text-amber-200 border-amber-500/50 shadow-amber-500/20'
+                : 'bg-slate-900/95 text-white border-amber-400/50 shadow-slate-950/60'
+                }`}
             >
               {/* TASK 3: High-contrast, easy-to-tap Close Button (min 32px) */}
               <button
@@ -208,16 +206,15 @@ export function ThemeCharacterWidget({ initialSettings }: ThemeCharacterWidgetPr
               {/* Tap hint */}
               <div className="mt-1 flex items-center justify-between text-[9px] text-amber-400/80 font-bold border-t border-white/10 pt-1">
                 <span>اضغط للتبديل 💬</span>
-                <span className="text-slate-400">حقوق السادات ⚖️</span>
+                <span className="text-slate-400">منصة الدستور ⚖️</span>
               </div>
 
               {/* Bubble Arrow Tail pointing to character */}
               <div
-                className={`absolute -bottom-2 w-3 h-3 rotate-45 border-r border-b ${
-                  isGirlSign
-                    ? 'bg-amber-950/90 border-amber-500/50'
-                    : 'bg-slate-900/95 border-amber-400/50'
-                } ${isRight ? 'right-10' : 'left-10'}`}
+                className={`absolute -bottom-2 w-3 h-3 rotate-45 border-r border-b ${isGirlSign
+                  ? 'bg-amber-950/90 border-amber-500/50'
+                  : 'bg-slate-900/95 border-amber-400/50'
+                  } ${isRight ? 'right-10' : 'left-10'}`}
               />
             </motion.div>
 

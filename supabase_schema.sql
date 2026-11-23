@@ -1,6 +1,5 @@
 -- =======================================================================
 -- منصة الدستور التعليمية (El-Dostour Educational Platform)
--- كلية الحقوق - جامعة مدينة السادات (Sadat City University)
 -- Database & Storage Schema for Supabase PostgreSQL
 -- =======================================================================
 
@@ -66,7 +65,7 @@ VALUES (
     'exam_countdown',
     jsonb_build_object(
         'active', false,
-        'title', 'امتحانات نهاية الفصل الدراسي - كلية الحقوق جامعة مدينة السادات',
+        'title', 'امتحانات نهاية الفصل الدراسي - منصة الدستور التعليمية',
         'target_date', '2026-12-25T09:00:00'
     )
 )
@@ -83,14 +82,14 @@ INSERT INTO public.site_settings (key, value)
 VALUES (
     'general',
     jsonb_build_object(
-        'college_name', 'كلية الحقوق - جامعة مدينة السادات',
+        'college_name', 'منصة الدستور التعليمية',
         'platform_name', 'منصة الدستور التعليمية',
         'hero_title', 'منصة الدستور التعليمية',
-        'hero_subtitle', 'البوابة الأكاديمية المتكاملة لطلاب كلية الحقوق - جامعة مدينة السادات',
+        'hero_subtitle', 'البوابة الأكاديمية المتكاملة لطلاب القانون والعلوم القانونية',
         'leadership_text', 'إشراف وتأسيس: مازن شكري • رحمة علاء • وليد محرم',
         'active_occasion_theme', 'default',
         'whatsapp_number', '201000000000',
-        'whatsapp_message', 'مرحباً، أود الاستفسار عن محاضرات منصة الدستور - حقوق السادات',
+        'whatsapp_message', 'مرحباً، أود الاستفسار عن محاضرات منصة الدستور التعليمية',
         'whatsapp_enabled', true,
         'social_facebook', 'https://facebook.com',
         'social_telegram', 'https://t.me',
@@ -628,3 +627,28 @@ GRANT ALL ON TABLE public.admin_security_logs TO anon, authenticated, service_ro
 ALTER PUBLICATION supabase_realtime ADD TABLE public.admin_security;
 ALTER PUBLICATION supabase_realtime ADD TABLE public.admin_users;
 ALTER PUBLICATION supabase_realtime ADD TABLE public.admin_security_logs;
+
+-- 24. Student Security & Verification Columns, Dynamic Portals, Tab Visibility Matrix & Emergency Switches
+ALTER TABLE public.students ADD COLUMN IF NOT EXISTS is_verified BOOLEAN DEFAULT false NOT NULL;
+ALTER TABLE public.students ADD COLUMN IF NOT EXISTS is_banned BOOLEAN DEFAULT false NOT NULL;
+ALTER TABLE public.students ADD COLUMN IF NOT EXISTS device_fingerprint TEXT;
+ALTER TABLE public.students ADD COLUMN IF NOT EXISTS last_device_info TEXT;
+ALTER TABLE public.students ADD COLUMN IF NOT EXISTS activity_score INTEGER DEFAULT 0 NOT NULL;
+ALTER TABLE public.students ADD COLUMN IF NOT EXISTS last_active_at TIMESTAMPTZ DEFAULT now() NOT NULL;
+ALTER TABLE public.students ADD COLUMN IF NOT EXISTS terms_accepted_at TIMESTAMPTZ DEFAULT now();
+ALTER TABLE public.students ADD COLUMN IF NOT EXISTS contract_version TEXT DEFAULT 'v2.0-EG';
+
+CREATE INDEX IF NOT EXISTS idx_students_is_verified ON public.students(is_verified);
+CREATE INDEX IF NOT EXISTS idx_students_is_banned ON public.students(is_banned);
+CREATE INDEX IF NOT EXISTS idx_students_activity_score ON public.students(activity_score DESC);
+
+ALTER TABLE public.admin_security ADD COLUMN IF NOT EXISTS super_admin_slug TEXT DEFAULT 'command-mazen';
+ALTER TABLE public.admin_security ADD COLUMN IF NOT EXISTS super_admin_key TEXT DEFAULT 'dustour2006';
+ALTER TABLE public.admin_security ADD COLUMN IF NOT EXISTS staff_portal_slug TEXT DEFAULT 'staff-portal';
+ALTER TABLE public.admin_security ADD COLUMN IF NOT EXISTS staff_portal_key TEXT DEFAULT 'team2026';
+ALTER TABLE public.admin_security ADD COLUMN IF NOT EXISTS whatsapp_approval_number TEXT DEFAULT '201000000000';
+ALTER TABLE public.admin_security ADD COLUMN IF NOT EXISTS staff_visible_tabs JSONB DEFAULT '{"materials": true, "quizzes": true, "covers": true, "students": false, "vault": false, "security": false, "settings": false}'::jsonb;
+ALTER TABLE public.admin_security ADD COLUMN IF NOT EXISTS recovery_code_hashes JSONB DEFAULT '[]'::jsonb;
+ALTER TABLE public.admin_security ADD COLUMN IF NOT EXISTS registration_paused BOOLEAN DEFAULT false NOT NULL;
+ALTER TABLE public.admin_security ADD COLUMN IF NOT EXISTS platform_lockdown BOOLEAN DEFAULT false NOT NULL;
+

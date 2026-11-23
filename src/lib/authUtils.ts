@@ -94,22 +94,140 @@ export function validateVaultComplexPassword(pwd: string): { isValid: boolean; e
 }
 
 /**
- * Log admin security events to public.admin_security_logs
+ * Dual-Mode Forensic Logging for Admin Security Events
+ * For legitimate Super Admin logins: IP is masked ('محمي (دخول معتمد)').
+ * For failed or suspicious attempts: logs full IP, device fingerprint, and details.
  */
 export async function logAdminSecurityEvent(
   eventType: string,
   username = '',
-  details = ''
+  details = '',
+  isSuperAdminSuccess = false
 ): Promise<void> {
   try {
+    let clientIp = isSuperAdminSuccess ? 'محمي (دخول معتمد)' : 'غير معروف';
+
+    if (!isSuperAdminSuccess && typeof window !== 'undefined') {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 1800);
+        const res = await fetch('https://api.ipify.org?format=json', { signal: controller.signal });
+        clearTimeout(timeoutId);
+        if (res.ok) {
+          const json = await res.json();
+          clientIp = json.ip || 'غير معروف';
+        }
+      } catch {
+        // Fallback to device info if external IP fetch fails/blocked
+        clientIp = getDeviceInfoString();
+      }
+    }
+
     await supabase.from('admin_security_logs').insert({
       event_type: eventType,
       username: username || 'System',
       details,
+      ip_address: clientIp,
     });
   } catch (err) {
     console.warn('Could not record admin security log:', err);
   }
+}
+
+/**
+ * Mask student phone number partially (e.g. 010****1260)
+ */
+export function maskPhoneNumber(phone?: string): string {
+  if (!phone) return 'غير متوفر';
+  const clean = phone.trim();
+  if (clean.length < 8) return '****';
+  const start = clean.slice(0, 3);
+  const end = clean.slice(-4);
+  return `${start}****${end}`;
+}
+
+/**
+ * Mask student email address partially (e.g. ma***@domain.com)
+ */
+export function maskEmail(email?: string): string {
+  if (!email) return 'غير متوفر';
+  const clean = email.trim();
+  const parts = clean.split('@');
+  if (parts.length !== 2) return '***';
+  const namePart = parts[0];
+  const domainPart = parts[1];
+  const visiblePrefix = namePart.slice(0, 2);
+  return `${visiblePrefix}***@${domainPart}`;
+}
+
+/**
+ * Client Device Fingerprinting for Single Device Binding Lock
+ */
+export async function getDeviceFingerprint(): Promise<string> {
+  if (typeof window === 'undefined') return 'server_environment';
+
+  const components = [
+    navigator.userAgent || '',
+    navigator.language || '',
+    screen.width || 0,
+    screen.height || 0,
+    screen.colorDepth || 0,
+    new Date().getTimezoneOffset(),
+    Intl?.DateTimeFormat()?.resolvedOptions()?.timeZone || '',
+  ].join('###');
+
+  return hashSha256(components);
+}
+
+/**
+ * Human-readable device and browser summary
+ */
+export function getDeviceInfoString(): string {
+  if (typeof window === 'undefined') return 'خادم';
+  const ua = navigator.userAgent;
+
+  let os = 'جهاز غير معروف';
+  if (/windows/i.test(ua)) os = 'Windows PC';
+  else if (/macintosh|mac os x/i.test(ua)) os = 'Mac OS';
+  else if (/android/i.test(ua)) os = 'Android Mobile';
+  else if (/iphone|ipad|ipod/i.test(ua)) os = 'Apple iOS';
+  else if (/linux/i.test(ua)) os = 'Linux';
+
+  let browser = 'متصفح';
+  if (/chrome|crios/i.test(ua) && !/edge|edg|opr/i.test(ua)) browser = 'Chrome';
+  else if (/safari/i.test(ua) && !/chrome/i.test(ua)) browser = 'Safari';
+  else if (/firefox|fxios/i.test(ua)) browser = 'Firefox';
+  else if (/edg/i.test(ua)) browser = 'Edge';
+  else if (/opr/i.test(ua)) browser = 'Opera';
+
+  return `${os} (${browser})`;
+}
+
+/**
+ * Generate 5 single-use Master Recovery Codes
+ */
+export async function generateMasterRecoveryCodes(): Promise<{
+  rawCodes: string[];
+  hashedCodes: string[];
+}> {
+  const rawCodes: string[] = [];
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+  for (let i = 0; i < 5; i++) {
+    let part1 = '';
+    let part2 = '';
+    for (let j = 0; j < 4; j++) {
+      part1 += chars.charAt(Math.floor(Math.random() * chars.length));
+      part2 += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    rawCodes.push(`DST-REC-${part1}-${part2}`);
+  }
+
+  const hashedCodes: string[] = await Promise.all(
+    rawCodes.map((code) => hashSha256(code.trim().toUpperCase()))
+  );
+
+  return { rawCodes, hashedCodes };
 }
 
 /**

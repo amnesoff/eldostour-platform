@@ -40,7 +40,7 @@ export function GenderWelcomeModal() {
           </span>
 
           <h3 className="text-xl font-black text-slate-900 dark:text-white mb-2">
-            كلية الحقوق - جامعة مدينة السادات
+            منصة الدستور التعليمية المستقلة
           </h3>
           <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 leading-relaxed mb-6">
             اختر مظهر وألوان المنصة المفضلة لتخصيص تجربتك الدراسية:

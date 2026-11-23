@@ -14,6 +14,7 @@ import {
   ShieldAlert,
   Loader2,
   CheckCircle2,
+  LifeBuoy,
 } from 'lucide-react';
 import { Logo } from '@/components/ui/Logo';
 import { supabase } from '@/lib/supabase';
@@ -22,16 +23,21 @@ import { AdminSession, SubAdminUser } from '@/types';
 
 interface AdminLoginProps {
   onSuccess: () => void;
+  gateType?: 'super_admin' | 'staff';
 }
 
-export function AdminLogin({ onSuccess }: AdminLoginProps) {
+export function AdminLogin({ onSuccess, gateType = 'super_admin' }: AdminLoginProps) {
   const [step, setStep] = useState<'credentials' | 'pin'>('credentials');
-  const [username, setUsername] = useState('Dr. Mazen 2006');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [pin, setPin] = useState(['', '', '', '', '', '']);
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // Master Recovery Code Mode (Only available for Super Admin Gate)
+  const [isRecoveryMode, setIsRecoveryMode] = useState(false);
+  const [recoveryCode, setRecoveryCode] = useState('');
 
   // Lockout State
   const [lockoutRemaining, setLockoutRemaining] = useState<number>(0);
@@ -67,13 +73,13 @@ export function AdminLogin({ onSuccess }: AdminLoginProps) {
     const currentAttempts = parseInt(localStorage.getItem('eldostour_admin_failed_attempts') || '0', 10) + 1;
     localStorage.setItem('eldostour_admin_failed_attempts', currentAttempts.toString());
 
-    await logAdminSecurityEvent('failed_login', targetUser, `${reason} (محاولة ${currentAttempts}/3)`);
+    await logAdminSecurityEvent('failed_login', targetUser || 'مجهول', `${reason} (محاولة ${currentAttempts}/3) [${gateType}]`);
 
     if (currentAttempts >= 3) {
       const lockUntil = Date.now() + 15 * 60 * 1000; // 15 minutes lockout
       localStorage.setItem('eldostour_admin_locked_until', lockUntil.toString());
       setLockoutRemaining(15 * 60);
-      await logAdminSecurityEvent('lockout', targetUser, 'تم إغلاق محاولات تسجيل الدخول أمنياً لمدة 15 دقيقة بعد 3 محاولات فاشلة');
+      await logAdminSecurityEvent('lockout', targetUser || 'مجهول', 'تم إغلاق محاولات تسجيل الدخول أمنياً لمدة 15 دقيقة بعد 3 محاولات فاشلة');
       setError('تم قفل النظام أمنياً لمدة 15 دقيقة بعد 3 محاولات خاطئة متتالية لحماية لوحة التحكم.');
       setStep('credentials');
       setPendingAdmin(null);
@@ -92,7 +98,7 @@ export function AdminLogin({ onSuccess }: AdminLoginProps) {
       const cleanUsername = username.trim();
       const enteredPasswordHash = await hashSha256(password.trim());
 
-      // 1. Check Super Admin in public.admin_security
+      // 1. Fetch Super Admin record
       const { data: securityRow } = await supabase
         .from('admin_security')
         .select('*')
@@ -100,19 +106,31 @@ export function AdminLogin({ onSuccess }: AdminLoginProps) {
         .maybeSingle();
 
       const defaultSuperUsername = securityRow?.admin_username || 'Dr. Mazen 2006';
-      // Default password hash for 'Mazen@2026'
       const defaultSuperPasswordHash =
         securityRow?.password_hash || 'b33b653a50da45bba3409e563f479875fc2e3a379d8a478bd515f5594de12200';
-      // Default PIN hash for '202600'
       const defaultSuperPinHash =
         securityRow?.pin_hash || '588505a0785bab576624a7783e03236d3858987ca0a59b5ce340c6c5e808e5bf';
 
       const isSuperUserMatch =
         cleanUsername.toLowerCase() === defaultSuperUsername.toLowerCase();
 
+      // Gate check enforcement
+      if (gateType === 'staff' && isSuperUserMatch) {
+        await recordFailedAttempt(cleanUsername, 'هذه البوابة مخصصة للمشرفين الفرعيين فقط. يرجى الدخول من بوابة الإدارة المركزية.');
+        setLoading(false);
+        return;
+      }
+
+      if (gateType === 'super_admin' && !isSuperUserMatch) {
+        // In Super Admin gate, refuse sub-admin logins
+        await recordFailedAttempt(cleanUsername, 'هذه البوابة مخصصة للإدارة المركزية فقط.');
+        setLoading(false);
+        return;
+      }
+
+      // 1. Super Admin Login Attempt
       if (isSuperUserMatch) {
         if (enteredPasswordHash === defaultSuperPasswordHash) {
-          // Super admin credentials passed -> proceed to PIN
           setPendingAdmin({
             username: defaultSuperUsername,
             is_super_admin: true,
@@ -129,7 +147,7 @@ export function AdminLogin({ onSuccess }: AdminLoginProps) {
         }
       }
 
-      // 2. Check Sub-Admins in public.admin_users
+      // 2. Sub-Admin Login Attempt
       const { data: subAdmin, error: subError } = await supabase
         .from('admin_users')
         .select('*')
@@ -160,6 +178,91 @@ export function AdminLogin({ onSuccess }: AdminLoginProps) {
     } catch (err: any) {
       console.warn('Admin login error:', err);
       setError('حدث خطأ أثناء الاتصال بالخادم الأمني، يرجى إعادة المحاولة');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Master Recovery Code Handler
+  const handleRecoverySubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (lockoutRemaining > 0) return;
+    setError('');
+    setLoading(true);
+
+    try {
+      const cleanUsername = username.trim();
+      const cleanCode = recoveryCode.trim().toUpperCase();
+
+      if (!cleanCode) {
+        setError('يرجى إدخال كود الاسترداد الطارئ');
+        setLoading(false);
+        return;
+      }
+
+      const { data: securityRow } = await supabase
+        .from('admin_security')
+        .select('*')
+        .eq('id', 'primary')
+        .maybeSingle();
+
+      const defaultSuperUsername = securityRow?.admin_username || 'Dr. Mazen 2006';
+      if (cleanUsername.toLowerCase() !== defaultSuperUsername.toLowerCase()) {
+        await recordFailedAttempt(cleanUsername, 'كود الاسترداد مخصص للمشرف العام فقط');
+        setLoading(false);
+        return;
+      }
+
+      const enteredCodeHash = await hashSha256(cleanCode);
+      const existingHashes: string[] = Array.isArray(securityRow?.recovery_code_hashes)
+        ? securityRow.recovery_code_hashes
+        : [];
+
+      if (existingHashes.includes(enteredCodeHash)) {
+        // Valid one-time code! Consume it immediately
+        const remainingHashes = existingHashes.filter((h) => h !== enteredCodeHash);
+        await supabase
+          .from('admin_security')
+          .update({
+            recovery_code_hashes: remainingHashes,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', 'primary');
+
+        // Clear lockouts
+        localStorage.removeItem('eldostour_admin_failed_attempts');
+        localStorage.removeItem('eldostour_admin_locked_until');
+
+        const sessionPayload: AdminSession = {
+          username: defaultSuperUsername,
+          is_super_admin: true,
+          session_version: securityRow?.session_version || 1,
+          permissions: {
+            can_manage_students: true,
+            can_manage_content: true,
+            can_delete_content: true,
+            can_access_student_vault: true,
+          },
+        };
+
+        sessionStorage.setItem('eldostour_admin_auth', 'authenticated');
+        sessionStorage.setItem('eldostour_admin_session', JSON.stringify(sessionPayload));
+        sessionStorage.setItem('eldostour_admin_login_time', Date.now().toString());
+        sessionStorage.setItem('eldostour_admin_last_activity', Date.now().toString());
+
+        await logAdminSecurityEvent(
+          'successful_login',
+          defaultSuperUsername,
+          'تم الدخول بنجاح عبر كود الاسترداد الرئيسي للطوارئ (One-Time Recovery Code) وتم استهلاك الكود'
+        );
+
+        onSuccess();
+      } else {
+        await recordFailedAttempt(cleanUsername, 'كود الاسترداد غير صحيح أو تم استخدامه مسبقاً');
+      }
+    } catch (err: any) {
+      console.warn('Recovery error:', err);
+      setError('حدث خطأ أثناء فحص كود الاسترداد');
     } finally {
       setLoading(false);
     }
@@ -251,8 +354,10 @@ export function AdminLogin({ onSuccess }: AdminLoginProps) {
     return `${m}:${s < 10 ? '0' : ''}${s}`;
   };
 
+  const isStaffGate = gateType === 'staff';
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#040814] via-[#091124] to-[#02050D] text-white p-4 select-none relative overflow-hidden">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#040814] via-[#091124] to-[#02050D] text-white p-4 select-none relative overflow-hidden" dir="rtl">
       {/* Background glow effects */}
       <div className="absolute top-1/4 left-1/3 w-96 h-96 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
       <div className="absolute bottom-1/4 right-1/3 w-96 h-96 bg-blue-600/10 rounded-full blur-3xl pointer-events-none" />
@@ -270,10 +375,12 @@ export function AdminLogin({ onSuccess }: AdminLoginProps) {
           </div>
           <Logo size="md" showSubtitle={false} />
           <h2 className="text-xl font-black text-white mt-3">
-            بوابة الإدارة المركزية والحماية
+            {isStaffGate ? 'بوابة المشرفين وفريق العمل' : 'بوابة الإدارة المركزية والحماية'}
           </h2>
           <p className="text-xs text-amber-400/80 font-medium mt-1">
-            نظام الحماية متعدد العوامل (Fortress-Grade 3FA)
+            {isStaffGate
+              ? 'نظام التحقق المعتمد للمشرفين الفرعيين'
+              : 'نظام الحماية متعدد العوامل (Fortress-Grade 3FA)'}
           </p>
         </div>
 
@@ -308,7 +415,81 @@ export function AdminLogin({ onSuccess }: AdminLoginProps) {
         )}
 
         <AnimatePresence mode="wait">
-          {step === 'credentials' ? (
+          {isRecoveryMode ? (
+            /* RECOVERY CODE LOGIN FORM */
+            <motion.form
+              key="step-recovery"
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 20 }}
+              onSubmit={handleRecoverySubmit}
+              className="space-y-4"
+            >
+              <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-center gap-2">
+                <LifeBuoy className="w-4 h-4 shrink-0 text-amber-400" />
+                <span>وضع استرداد الطوارئ — كود أحادي الاستخدام (One-Time)</span>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                  اسم المشرف العام:
+                </label>
+                <div className="relative">
+                  <User className="w-4 h-4 text-amber-400/80 absolute right-3.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    placeholder="أدخل اسم المشرف..."
+                    autoComplete="off"
+                    disabled={lockoutRemaining > 0 || loading}
+                    required
+                    className="w-full h-11 pr-11 pl-4 rounded-xl bg-slate-950/80 border border-slate-700 focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 text-white text-sm outline-none transition-all text-right disabled:opacity-50"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                  كود الاسترداد الرئيسي (DST-REC-XXXX-XXXX):
+                </label>
+                <div className="relative">
+                  <KeyRound className="w-4 h-4 text-amber-400/80 absolute right-3.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={recoveryCode}
+                    onChange={(e) => setRecoveryCode(e.target.value.toUpperCase())}
+                    placeholder="DST-REC-XXXX-XXXX"
+                    autoComplete="off"
+                    dir="ltr"
+                    disabled={lockoutRemaining > 0 || loading}
+                    required
+                    className="w-full h-11 pr-11 pl-4 rounded-xl bg-slate-950/80 border border-slate-700 focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 text-amber-400 font-mono font-bold text-sm outline-none transition-all text-center tracking-wider disabled:opacity-50"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsRecoveryMode(false);
+                    setError('');
+                  }}
+                  className="w-1/3 h-12 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition-all cursor-pointer"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="submit"
+                  disabled={loading || lockoutRemaining > 0 || !username.trim() || !recoveryCode.trim()}
+                  className="w-2/3 h-12 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-slate-950 font-bold text-sm shadow-lg shadow-amber-500/20 transition-all flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
+                >
+                  {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <span>دخول بكود الاسترداد 🔓</span>}
+                </button>
+              </div>
+            </motion.form>
+          ) : step === 'credentials' ? (
             /* STEP 1: USERNAME & PASSWORD */
             <motion.form
               key="step-credentials"
@@ -318,7 +499,7 @@ export function AdminLogin({ onSuccess }: AdminLoginProps) {
               onSubmit={handleCredentialsSubmit}
               className="space-y-4"
             >
-              {/* Username Input */}
+              {/* Username Input - Strictly Blank, Zero-Hint */}
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1.5">
                   اسم المشرف أو المسؤول:
@@ -331,7 +512,8 @@ export function AdminLogin({ onSuccess }: AdminLoginProps) {
                     type="text"
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
-                    placeholder="Dr. Mazen 2006 أو اسم المشرف..."
+                    placeholder="أدخل اسم المشرف..."
+                    autoComplete="off"
                     disabled={lockoutRemaining > 0 || loading}
                     required
                     className="w-full h-11 pr-11 pl-4 rounded-xl bg-slate-950/80 border border-slate-700 focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 text-white text-sm outline-none transition-all text-right disabled:opacity-50"
@@ -352,7 +534,8 @@ export function AdminLogin({ onSuccess }: AdminLoginProps) {
                     type={showPassword ? 'text' : 'password'}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    placeholder="أدخل كلمة المرور..."
+                    placeholder="••••••••"
+                    autoComplete="off"
                     disabled={lockoutRemaining > 0 || loading}
                     required
                     className="w-full h-11 pr-11 pl-11 rounded-xl bg-slate-950/80 border border-slate-700 focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 text-white text-sm outline-none transition-all text-right disabled:opacity-50"
@@ -389,6 +572,22 @@ export function AdminLogin({ onSuccess }: AdminLoginProps) {
                   </>
                 )}
               </button>
+
+              {/* Master Recovery Code Entry Link for Super Admin Gate */}
+              {!isStaffGate && (
+                <div className="pt-2 text-center">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsRecoveryMode(true);
+                      setError('');
+                    }}
+                    className="text-[11px] text-amber-400/70 hover:text-amber-300 underline underline-offset-4 cursor-pointer transition-colors"
+                  >
+                    استخدام كود الاسترداد الرئيسي للطوارئ 🚨
+                  </button>
+                </div>
+              )}
             </motion.form>
           ) : (
             /* STEP 2: 6-DIGIT SECURITY PIN */
@@ -425,6 +624,7 @@ export function AdminLogin({ onSuccess }: AdminLoginProps) {
                     inputMode="numeric"
                     maxLength={1}
                     value={digit}
+                    autoComplete="off"
                     onChange={(e) => handlePinChange(idx, e.target.value)}
                     onKeyDown={(e) => handlePinKeyDown(idx, e)}
                     disabled={lockoutRemaining > 0 || loading}
@@ -477,4 +677,3 @@ export function AdminLogin({ onSuccess }: AdminLoginProps) {
     </div>
   );
 }
-

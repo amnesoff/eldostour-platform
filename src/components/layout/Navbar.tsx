@@ -239,7 +239,7 @@ export function Navbar({ onOpenSearch }: NavbarProps) {
 
             <div className="mt-6 pt-4 border-t border-white/10 text-center">
               <p className="text-xs text-slate-400 italic">
-                «العدل أساس الملك، والعلم سراج المستقبل — نعتز بخدمة طلاب كلية الحقوق بجامعة مدينة السادات»
+                «العدل أساس الملك، والعلم سراج المستقبل — نعتز بخدمة طلاب العلوم القانونية والحقوقية»
               </p>
             </div>
           </div>

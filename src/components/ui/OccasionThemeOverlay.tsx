@@ -295,7 +295,7 @@ export function OccasionThemeOverlay({ theme }: OccasionThemeOverlayProps) {
                     </div>
 
                     <h4 className="text-base sm:text-lg font-black text-amber-300 leading-snug">
-                      تهنئة خاصة لطلاب حقوق السادات
+                      تهنئة خاصة لطلاب منصة الدستور التعليمية
                     </h4>
 
                     <p className="text-xs text-slate-300 mt-1 leading-relaxed">

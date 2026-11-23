@@ -18,6 +18,14 @@ export interface Student {
   phone?: string;
   is_guest?: boolean;
   is_approved?: boolean;
+  is_verified?: boolean;
+  is_banned?: boolean;
+  device_fingerprint?: string;
+  last_device_info?: string;
+  activity_score?: number;
+  last_active_at?: string;
+  terms_accepted_at?: string;
+  contract_version?: string;
   created_at: string;
 }
 
@@ -31,6 +39,14 @@ export interface RegisterStudentData {
   avatar_url?: string;
   phone?: string;
   is_approved?: boolean;
+  is_verified?: boolean;
+  is_banned?: boolean;
+  device_fingerprint?: string;
+  last_device_info?: string;
+  activity_score?: number;
+  last_active_at?: string;
+  terms_accepted_at?: string;
+  contract_version?: string;
 }
 
 export interface GuestStudentData {
@@ -51,6 +67,15 @@ export interface AdminSecuritySettings {
   vault_complex_hash?: string;
   session_version: number;
   manual_approval_enabled: boolean;
+  super_admin_slug?: string;
+  super_admin_key?: string;
+  staff_portal_slug?: string;
+  staff_portal_key?: string;
+  whatsapp_approval_number?: string;
+  staff_visible_tabs?: Record<string, boolean>;
+  recovery_code_hashes?: string[];
+  registration_paused?: boolean;
+  platform_lockdown?: boolean;
   updated_at?: string;
 }
 

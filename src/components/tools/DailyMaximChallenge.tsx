@@ -65,7 +65,7 @@ export function DailyMaximChallenge() {
           options: q.options || ['صحيح', 'خطأ'],
           correctAnswer: q.correct_answer,
           explanation: q.explanation || 'سند قانوني معتمد من المنهج الجامعي',
-          articleRef: 'كلية الحقوق جامعة مدينة السادات',
+          articleRef: 'منصة الدستور التعليمية',
         }));
       }
 
@@ -179,7 +179,7 @@ export function DailyMaximChallenge() {
         </div>
 
         <div className="mt-4 pt-3 border-t border-white/10 flex items-center justify-between text-[11px] text-slate-400">
-          <span>كلية الحقوق - جامعة مدينة السادات</span>
+          <span>منصة الدستور التعليمية</span>
           <span className="text-amber-400">تحديث يومي دوري</span>
         </div>
       </div>

@@ -24,7 +24,7 @@ export async function downloadDirectWatermarkedPdf(
 
     // Prepare safe watermark text (Latin alphanumeric safe for pdf-lib standard fonts)
     const code = studentInfo?.code || 'DST-LAW';
-    const stampText = `EL-DOSTOUR • ${code} • SADAT FACULTY OF LAW`;
+    const stampText = `EL-DOSTOUR PLATFORM • ${code}`;
 
     pages.forEach((page) => {
       const { width, height } = page.getSize();

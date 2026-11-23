@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { notFound } from 'next/navigation';
 import {
   UploadCloud,
   Layers,
@@ -18,6 +19,8 @@ import {
   Sparkles,
   Users,
   ShieldAlert,
+  Phone,
+  AlertTriangle,
 } from 'lucide-react';
 import { AdminLogin } from '@/components/admin/AdminLogin';
 import { AdminHeader } from '@/components/admin/AdminHeader';
@@ -55,10 +58,29 @@ type AdminTab =
 
 const INACTIVITY_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 
-export default function AdminDashboardClient() {
+interface AdminDashboardClientProps {
+  gateType?: 'super_admin' | 'staff';
+  isDirectAdminRoute?: boolean;
+}
+
+export default function AdminDashboardClient({
+  gateType = 'super_admin',
+  isDirectAdminRoute = false,
+}: AdminDashboardClientProps) {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
   const [adminSession, setAdminSession] = useState<AdminSession | null>(null);
   const [activeTab, setActiveTabState] = useState<AdminTab>('upload');
+  const [staffVisibleTabs, setStaffVisibleTabs] = useState<Record<string, boolean>>({
+    materials: true,
+    quizzes: true,
+    covers: true,
+  });
+  const [securityAlert, setSecurityAlert] = useState<{
+    target: string;
+    details: string;
+    ip: string;
+    time: string;
+  } | null>(null);
 
   // Tab Persistence across F5 page reloads
   useEffect(() => {
@@ -206,6 +228,38 @@ export default function AdminDashboardClient() {
       if (sett && sett.value) {
         setCountdownSettings(sett.value as ExamCountdownSettings);
       }
+
+      // 5. Fetch Security Settings & Staff Visible Tabs
+      const { data: secRow } = await supabase
+        .from('admin_security')
+        .select('staff_visible_tabs')
+        .eq('id', 'primary')
+        .maybeSingle();
+
+      if (secRow?.staff_visible_tabs) {
+        setStaffVisibleTabs(secRow.staff_visible_tabs);
+      }
+
+      // 6. Check Recent Failed Attempts (last 24 hours)
+      const { data: recentFails } = await supabase
+        .from('admin_security_logs')
+        .select('*')
+        .or('event_type.eq.failed_login,event_type.eq.lockout')
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      if (recentFails && recentFails.length > 0) {
+        const f = recentFails[0];
+        const failTime = new Date(f.created_at).getTime();
+        if (Date.now() - failTime < 24 * 60 * 60 * 1000) {
+          setSecurityAlert({
+            target: f.target_user || 'غير معروف',
+            details: f.details || 'محاولة دخول غير مصرح بها',
+            ip: f.ip_address || 'غير محدد',
+            time: new Date(f.created_at).toLocaleTimeString('ar-EG'),
+          });
+        }
+      }
     } catch (err) {
       console.warn('Error fetching admin data:', err);
     } finally {
@@ -266,8 +320,12 @@ export default function AdminDashboardClient() {
   }
 
   if (!isAuthenticated) {
+    if (isDirectAdminRoute) {
+      notFound();
+    }
     return (
       <AdminLogin
+        gateType={gateType}
         onSuccess={() => {
           const sessionStr = sessionStorage.getItem('eldostour_admin_session');
           if (sessionStr) {
@@ -290,12 +348,12 @@ export default function AdminDashboardClient() {
   const totalSubjects = subjects.length;
   const activeNewsCount = news.filter((n) => n.is_active).length;
 
-  const tabs = [
-    { id: 'upload', label: 'رفع الملفات السريع', icon: <UploadCloud className="w-4 h-4" /> },
-    { id: 'covers', label: 'إدارة أغلفة المواد ومعاينة الفيديو', icon: <FolderArchive className="w-4 h-4 text-amber-400" /> },
-    { id: 'materials', label: 'إدارة المحاضرات (تحديد وحذف)', count: totalMaterials, icon: <Layers className="w-4 h-4" /> },
-    { id: 'quizzes', label: 'الاختبارات وبناء الأسئلة والتكريم', icon: <Award className="w-4 h-4" /> },
-    { id: 'students', label: 'سجل الطلاب والكارنيهات', icon: <Users className="w-4 h-4 text-emerald-400" /> },
+  const rawTabs = [
+    { id: 'upload' as AdminTab, label: 'رفع الملفات السريع', icon: <UploadCloud className="w-4 h-4" /> },
+    { id: 'covers' as AdminTab, label: 'إدارة أغلفة المواد ومعاينة الفيديو', icon: <FolderArchive className="w-4 h-4 text-amber-400" /> },
+    { id: 'materials' as AdminTab, label: 'إدارة المحاضرات (تحديد وحذف)', count: totalMaterials, icon: <Layers className="w-4 h-4" /> },
+    { id: 'quizzes' as AdminTab, label: 'الاختبارات وبناء الأسئلة والتكريم', icon: <Award className="w-4 h-4" /> },
+    { id: 'students' as AdminTab, label: 'سجل الطلاب والكارنيهات', icon: <Users className="w-4 h-4 text-emerald-400" /> },
     ...(adminSession?.is_super_admin
       ? [
           {
@@ -305,20 +363,49 @@ export default function AdminDashboardClient() {
           },
         ]
       : []),
-    { id: 'french', label: 'القاموس الفرنسي الصوتي', icon: <BookA className="w-4 h-4" /> },
-    { id: 'themes', label: 'الثيمات والشخصيات التفاعلية', icon: <Sparkles className="w-4 h-4 text-purple-400" /> },
-    { id: 'cms', label: 'الـ CMS والواتساب والتواصل', icon: <Settings className="w-4 h-4" /> },
-    { id: 'requests', label: 'طلبات الطلاب', icon: <MessageSquare className="w-4 h-4" /> },
-    { id: 'subjects', label: 'المواد الدراسية', count: totalSubjects, icon: <BookOpen className="w-4 h-4" /> },
-    { id: 'news', label: 'الأخبار العاجلة', count: activeNewsCount, icon: <BellRing className="w-4 h-4" /> },
-    { id: 'countdown', label: 'عداد الامتحانات', icon: <Clock className="w-4 h-4" /> },
+    { id: 'french' as AdminTab, label: 'القاموس الفرنسي الصوتي', icon: <BookA className="w-4 h-4" /> },
+    { id: 'themes' as AdminTab, label: 'الثيمات والشخصيات التفاعلية', icon: <Sparkles className="w-4 h-4 text-purple-400" /> },
+    { id: 'cms' as AdminTab, label: 'الـ CMS والواتساب والتواصل', icon: <Settings className="w-4 h-4" /> },
+    { id: 'requests' as AdminTab, label: 'طلبات الطلاب', icon: <MessageSquare className="w-4 h-4" /> },
+    { id: 'subjects' as AdminTab, label: 'المواد الدراسية', count: totalSubjects, icon: <BookOpen className="w-4 h-4" /> },
+    { id: 'news' as AdminTab, label: 'الأخبار العاجلة', count: activeNewsCount, icon: <BellRing className="w-4 h-4" /> },
+    { id: 'countdown' as AdminTab, label: 'عداد الامتحانات', icon: <Clock className="w-4 h-4" /> },
   ];
+
+  // Tab Filtering for Sub-Admins
+  const tabs = adminSession?.is_super_admin
+    ? rawTabs
+    : rawTabs.filter((t) => staffVisibleTabs[t.id] !== false);
 
   return (
     <div className="min-h-screen flex flex-col bg-[#070c18] text-slate-100 select-none selection:bg-amber-500/20">
       <AdminHeader onLogout={handleLogout} adminSession={adminSession} />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+        {/* Security Alert Banner (Red) with WhatsApp Notification */}
+        {securityAlert && (
+          <div className="p-4 rounded-2xl bg-rose-500/15 border border-rose-500/40 text-rose-300 flex items-center justify-between flex-wrap gap-3 text-right" dir="rtl">
+            <div className="flex items-center gap-2.5">
+              <ShieldAlert className="w-5 h-5 text-rose-400 shrink-0 animate-pulse" />
+              <div className="text-xs leading-relaxed">
+                <strong className="block text-white font-bold">⚠️ إنذار أمني: رصد محاولات دخول فاشلة غير مصرح بها</strong>
+                المستهدف: ({securityAlert.target}) • {securityAlert.details} • IP: <span className="font-mono text-amber-300">{securityAlert.ip}</span> • الوقت: {securityAlert.time}
+              </div>
+            </div>
+            <a
+              href={`https://wa.me/201000000000?text=${encodeURIComponent(
+                `⚠️ إنذار أمني من منصة الدستور: تم رصد محاولة دخول فاشلة على لوحة التحكم.\nالمستهدف: ${securityAlert.target}\nالتفاصيل: ${securityAlert.details}\nIP: ${securityAlert.ip}`
+              )}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md transition-all active:scale-95"
+            >
+              <Phone className="w-3.5 h-3.5" />
+              <span>إبلاغ المشرف العام فوراً عبر واتساب 💬</span>
+            </a>
+          </div>
+        )}
+
         {/* Quick Stats Overview Banner */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
           <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800 text-right">

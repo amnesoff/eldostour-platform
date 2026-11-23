@@ -559,7 +559,7 @@ export function LectureBundleManager({
               type="text"
               value={telegramChannelId}
               onChange={(e) => setTelegramChannelId(e.target.value)}
-              placeholder="@eldostour_law_sadat"
+              placeholder="@eldostour_law"
               className="w-full h-9 px-3 rounded-xl bg-slate-900 border border-slate-700 text-white font-mono outline-none"
             />
           </div>

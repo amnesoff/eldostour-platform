@@ -41,19 +41,19 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
 
   const quickLinks = [
     {
-      title: 'الفرقة الأولى - أولى حقوق السادات',
+      title: 'الفرقة الأولى - سنة أولى حقوق',
       category: 'الفرق الدراسية',
       href: '/grade/1',
       icon: <GraduationCap className="w-4 h-4 text-blue-500" />,
     },
     {
-      title: 'الفرقة الثانية - ثانية حقوق السادات',
+      title: 'الفرقة الثانية - سنة ثانية حقوق',
       category: 'الفرق الدراسية',
       href: '/grade/2',
       icon: <GraduationCap className="w-4 h-4 text-amber-500" />,
     },
     {
-      title: 'الفرقة الثالثة - ثالثة حقوق السادات',
+      title: 'الفرقة الثالثة - سنة ثالثة حقوق',
       category: 'الفرق الدراسية',
       href: '/grade/3',
       icon: <GraduationCap className="w-4 h-4 text-emerald-500" />,
@@ -65,7 +65,7 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
       icon: <GraduationCap className="w-4 h-4 text-purple-500" />,
     },
     {
-      title: 'حاسبة المعدل التراكمي (Sadat Law GPA)',
+      title: 'حاسبة المعدل التراكمي (Law GPA Calculator)',
       category: 'أدوات ذكية',
       href: '/#gpa-calculator',
       icon: <Calculator className="w-4 h-4 text-teal-500" />,
@@ -160,7 +160,7 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
 
           {/* Footer Shortcuts hint */}
           <div className="px-4 py-2.5 bg-slate-50 dark:bg-slate-950/60 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between text-[11px] text-slate-400">
-            <span>حقوق جامعة مدينة السادات</span>
+            <span>منصة الدستور التعليمية</span>
             <span>اضغط Esc للإغلاق</span>
           </div>
         </motion.div>

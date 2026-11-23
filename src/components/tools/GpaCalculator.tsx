@@ -147,7 +147,7 @@ export function GpaCalculator() {
           </div>
           <div>
             <h3 className="text-base sm:text-lg font-bold">
-              حاسبة ومحاكي المعدل التراكمي بنظام النقاط والحروف (Sadat Law GPA)
+              حاسبة ومحاكي المعدل التراكمي بنظام النقاط والحروف (Law GPA Calculator)
             </h3>
             <p className="text-xs text-slate-600 dark:text-slate-400">
               نظام الساعات المعتمدة وسلم التقديرات الجامعي من A+ إلى F

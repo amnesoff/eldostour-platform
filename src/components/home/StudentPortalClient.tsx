@@ -174,7 +174,7 @@ export default function StudentPortalClient() {
                 transition={{ delay: 0.65, duration: 0.6 }}
                 className="text-xs sm:text-sm text-amber-200/90 font-bold mt-2"
               >
-                كلية الحقوق — جامعة مدينة السادات ⚖️
+                المنصة الأكاديمية المستقلة للعلوم القانونية ⚖️
               </motion.p>
 
               <motion.span
@@ -251,7 +251,7 @@ export default function StudentPortalClient() {
               transition={{ delay: 0.3 }}
               className="mt-3 text-xs sm:text-sm md:text-base text-slate-600 dark:text-slate-300 max-w-2xl mx-auto leading-relaxed"
             >
-              محاضرات، ملخصات بصيغة PDF، وفيديوهات شرح مباشرة لجميع الفرق الدراسية الأربعة بكلية الحقوق جامعة مدينة السادات، بتحديث سحابي فوري.
+              محاضرات، ملخصات بصيغة PDF، واختبارات تفاعلية لجميع الفرق الدراسية الأربعة بالعلوم القانونية، بتحديث سحابي فوري.
             </motion.p>
 
             {/* Quick Action Buttons */}

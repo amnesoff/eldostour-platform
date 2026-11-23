@@ -28,6 +28,10 @@ import {
   Loader2,
   Eye,
   EyeOff,
+  Flame,
+  Smartphone,
+  Ban,
+  BadgeCheck,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { Student, AcademicYearId, StudentGender, AdminSession, AdminSecuritySettings } from '@/types';
@@ -38,6 +42,8 @@ import {
   validateVaultNumericPassword,
   validateVaultComplexPassword,
   logAdminSecurityEvent,
+  maskPhoneNumber,
+  maskEmail,
 } from '@/lib/authUtils';
 
 interface StudentsDirectoryProps {
@@ -53,6 +59,11 @@ export function StudentsDirectory({ adminSession }: StudentsDirectoryProps) {
   const [selectedGender, setSelectedGender] = useState<StudentGender | 'all'>('all');
   const [selectedAccountType, setSelectedAccountType] = useState<'all' | 'approved' | 'pending' | 'guests'>('all');
   const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  // Partial text masking & photo blur toggles
+  const [revealedRows, setRevealedRows] = useState<Set<string>>(new Set());
+  const [revealedPhotos, setRevealedPhotos] = useState<Set<string>>(new Set());
+  const [showActiveRadar, setShowActiveRadar] = useState(false);
 
   // Security & Vault State
   const [vaultSettings, setVaultSettings] = useState<AdminSecuritySettings | null>(null);
@@ -423,7 +434,7 @@ export function StudentsDirectory({ adminSession }: StudentsDirectoryProps) {
 
   // Filtered Students
   const filteredStudents = useMemo(() => {
-    return students.filter((s) => {
+    let result = students.filter((s) => {
       // Account type filter
       if (selectedAccountType === 'approved') {
         if (s.is_guest || s.is_approved === false) return false;
@@ -453,7 +464,15 @@ export function StudentsDirectory({ adminSession }: StudentsDirectoryProps) {
 
       return true;
     });
-  }, [students, selectedAccountType, selectedYear, selectedGender, searchQuery]);
+
+    if (showActiveRadar) {
+      result = result
+        .filter((s) => !s.is_guest && !s.is_banned)
+        .sort((a, b) => (b.activity_score || 0) - (a.activity_score || 0));
+    }
+
+    return result;
+  }, [students, selectedAccountType, selectedYear, selectedGender, searchQuery, showActiveRadar]);
 
   // Copy helper
   const handleCopy = (text: string, id: string) => {
@@ -599,6 +618,79 @@ export function StudentsDirectory({ adminSession }: StudentsDirectoryProps) {
       alert(`فشل الحذف: ${err?.message || 'خطأ غير متوقع'}`);
     } finally {
       setDeletingId(null);
+    }
+  };
+
+  const toggleRowReveal = (id: string) => {
+    setRevealedRows((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const togglePhotoReveal = (id: string) => {
+    setRevealedPhotos((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+        setTimeout(() => {
+          setRevealedPhotos((current) => {
+            const reblur = new Set(current);
+            reblur.delete(id);
+            return reblur;
+          });
+        }, 120000);
+      }
+      return next;
+    });
+  };
+
+  const handleToggleVerify = async (studentId: string, currentStatus?: boolean) => {
+    const nextVal = !currentStatus;
+    try {
+      await supabase.from('students').update({ is_verified: nextVal }).eq('id', studentId);
+      setStudents((prev) => prev.map((s) => (s.id === studentId ? { ...s, is_verified: nextVal } : s)));
+    } catch {
+      alert('فشل تحديث حالة الاعتماد');
+    }
+  };
+
+  const handleToggleBan = async (studentId: string, currentStatus?: boolean) => {
+    const nextVal = !currentStatus;
+    const conf = confirm(
+      nextVal
+        ? 'هل أنت متأكد من حظر هذا الطالب ومنعه من استخدام المنصة نهائياً؟'
+        : 'هل ترغب في فك حظر هذا الطالب؟'
+    );
+    if (!conf) return;
+    try {
+      await supabase.from('students').update({ is_banned: nextVal }).eq('id', studentId);
+      setStudents((prev) => prev.map((s) => (s.id === studentId ? { ...s, is_banned: nextVal } : s)));
+    } catch {
+      alert('فشل تحديث حالة الحظر');
+    }
+  };
+
+  const handleUnbindDevice = async (studentId: string, name: string) => {
+    const conf = confirm(
+      `هل تود فك ارتباط الجهاز الحالي للطالب (${name}) للسماح له بالتسجيل من جهاز جديد؟`
+    );
+    if (!conf) return;
+    try {
+      await supabase
+        .from('students')
+        .update({ device_fingerprint: null, last_device_info: null })
+        .eq('id', studentId);
+      setStudents((prev) =>
+        prev.map((s) => (s.id === studentId ? { ...s, device_fingerprint: undefined } : s))
+      );
+      alert(`تم فك ارتباط الجهاز بنجاح للطالب ${name}`);
+    } catch {
+      alert('فشل فك ارتباط الجهاز');
     }
   };
 
@@ -881,6 +973,21 @@ export function StudentsDirectory({ adminSession }: StudentsDirectoryProps) {
           <option value="male">طلاب فقط 🔵</option>
           <option value="female">طالبات فقط 🟣</option>
         </select>
+
+        {/* Activity Radar Filter */}
+        <button
+          type="button"
+          onClick={() => setShowActiveRadar(!showActiveRadar)}
+          className={`h-10 px-3.5 rounded-xl border text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 cursor-pointer ${
+            showActiveRadar
+              ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-md shadow-amber-500/20'
+              : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
+          }`}
+          title="ترتيب الطلاب حسب نقاط النشاط والتفاعل"
+        >
+          <Flame className={`w-4 h-4 ${showActiveRadar ? 'text-slate-950 fill-current' : 'text-amber-500'}`} />
+          <span>الطلاب النشيطين 🔥</span>
+        </button>
       </div>
 
       {/* Main Container: Locked Vault Screen VS Students Table */}
@@ -1023,12 +1130,18 @@ export function StudentsDirectory({ adminSession }: StudentsDirectoryProps) {
                     const cleanPhone = s.phone?.replace(/\D/g, '');
                     const formattedPhone = cleanPhone?.startsWith('0') ? `2${cleanPhone}` : cleanPhone;
                     const isPending = !s.is_guest && s.is_approved === false;
+                    const isRowRevealed = revealedRows.has(s.id);
+                    const displayPhone = isRowRevealed ? s.phone : maskPhoneNumber(s.phone);
+                    const displayEmail = isRowRevealed ? s.email : maskEmail(s.email);
+                    const isPhotoRevealed = revealedPhotos.has(s.id);
 
                     return (
                       <tr
                         key={s.id}
                         className={`transition-colors text-slate-200 ${
-                          isPending
+                          s.is_banned
+                            ? 'bg-rose-950/20 hover:bg-rose-950/30 border-r-4 border-rose-500'
+                            : isPending
                             ? 'bg-amber-500/5 hover:bg-amber-500/10'
                             : 'hover:bg-slate-800/40'
                         }`}
@@ -1039,7 +1152,7 @@ export function StudentsDirectory({ adminSession }: StudentsDirectoryProps) {
                             <span>{s.student_code}</span>
                             <button
                               onClick={() => handleCopy(s.student_code, s.id)}
-                              className="p-1 rounded text-slate-500 hover:text-amber-400 hover:bg-slate-800"
+                              className="p-1 rounded text-slate-500 hover:text-amber-400 hover:bg-slate-800 transition-colors"
                               title="نسخ رقم القيد"
                             >
                               {isCopied ? (
@@ -1057,7 +1170,7 @@ export function StudentsDirectory({ adminSession }: StudentsDirectoryProps) {
                                   setCodeError('');
                                   setCodeSuccess(false);
                                 }}
-                                className="p-1 rounded text-slate-500 hover:text-amber-400 hover:bg-slate-800"
+                                className="p-1 rounded text-slate-500 hover:text-amber-400 hover:bg-slate-800 transition-colors"
                                 title="تعديل الكود لرقم VIP مميز"
                               >
                                 <Edit3 className="w-3.5 h-3.5" />
@@ -1068,29 +1181,93 @@ export function StudentsDirectory({ adminSession }: StudentsDirectoryProps) {
 
                         {/* Photo & Name */}
                         <td className="py-3 px-3 whitespace-nowrap">
-                          <div className="flex items-center gap-2">
-                            <div className="w-8 h-8 rounded-full bg-slate-800 border border-amber-500/30 overflow-hidden shrink-0 flex items-center justify-center">
+                          <div className="flex items-center gap-2.5">
+                            <div className="relative w-9 h-9 rounded-full bg-slate-800 border border-amber-500/30 overflow-hidden shrink-0 flex items-center justify-center group/avatar shadow-inner">
                               {s.avatar_url ? (
-                                // eslint-disable-next-line @next/next/no-img-element
-                                <img src={s.avatar_url} alt={s.full_name} className="w-full h-full object-cover" />
+                                <>
+                                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                                  <img
+                                    src={s.avatar_url}
+                                    alt={s.full_name}
+                                    className={`w-full h-full object-cover transition-all duration-300 ${
+                                      isPhotoRevealed ? 'filter-none scale-100' : 'filter blur-xl scale-125'
+                                    }`}
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      togglePhotoReveal(s.id);
+                                    }}
+                                    className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover/avatar:opacity-100 hover:!opacity-100 transition-opacity text-white"
+                                    title={isPhotoRevealed ? 'إعادة تعتيم الصورة' : 'كشف الصورة مؤقتاً'}
+                                  >
+                                    {isPhotoRevealed ? (
+                                      <EyeOff className="w-3.5 h-3.5" />
+                                    ) : (
+                                      <Eye className="w-3.5 h-3.5" />
+                                    )}
+                                  </button>
+                                </>
                               ) : (
                                 <span className="text-xs">{s.gender === 'female' ? '👩‍🎓' : '👨‍🎓'}</span>
                               )}
                             </div>
-                            <div>
-                              <span className="font-bold text-white block">{s.full_name}</span>
+                            <div className="flex flex-col gap-0.5">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="font-bold text-white block">{s.full_name}</span>
+                                {s.is_verified && (
+                                  <span
+                                    className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold text-[#EC4899] bg-pink-500/15 border border-pink-500/30"
+                                    title="طالب موثق ومعتمد رسمياً VIP"
+                                  >
+                                    <BadgeCheck className="w-3 h-3 text-[#EC4899]" />
+                                    <span>معتمد ✓</span>
+                                  </span>
+                                )}
+                                {s.is_banned && (
+                                  <span
+                                    className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold text-rose-400 bg-rose-500/15 border border-rose-500/30"
+                                    title="حساب محظور"
+                                  >
+                                    <Ban className="w-3 h-3 text-rose-400" />
+                                    <span>محظور 🚫</span>
+                                  </span>
+                                )}
+                                {typeof s.activity_score === 'number' && s.activity_score > 0 && (
+                                  <span
+                                    className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold text-amber-300 bg-amber-500/15 border border-amber-500/30"
+                                    title={`نقاط تفاعل الطالب: ${s.activity_score}`}
+                                  >
+                                    <Flame className="w-3 h-3 text-amber-400" />
+                                    <span>{s.activity_score}</span>
+                                  </span>
+                                )}
+                              </div>
                             </div>
                           </div>
                         </td>
 
-                        {/* Phone + WhatsApp */}
+                        {/* Phone + WhatsApp + Eye Toggle */}
                         <td className="py-3 px-3 whitespace-nowrap">
                           {s.phone ? (
                             <div className="flex items-center gap-1.5 font-mono">
-                              <span className="text-slate-300" dir="ltr">{s.phone}</span>
+                              <span className="text-slate-300" dir="ltr">{displayPhone}</span>
+                              <button
+                                type="button"
+                                onClick={() => toggleRowReveal(s.id)}
+                                className="p-1 rounded text-slate-400 hover:text-amber-400 hover:bg-slate-800 transition-colors"
+                                title={isRowRevealed ? 'حجب البيانات الحساسة' : 'إظهار الهاتف والإيميل كاملاً'}
+                              >
+                                {isRowRevealed ? (
+                                  <EyeOff className="w-3.5 h-3.5" />
+                                ) : (
+                                  <Eye className="w-3.5 h-3.5" />
+                                )}
+                              </button>
                               <a
                                 href={`https://wa.me/${formattedPhone}?text=${encodeURIComponent(
-                                  `مرحباً يا ${s.full_name}، نتواصل معك من إدارة منصة الدستور التعليمية - كلية الحقوق جامعة مدينة السادات`
+                                  `مرحباً يا ${s.full_name}، نتواصل معك من إدارة منصة الدستور التعليمية`
                                 )}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
@@ -1151,7 +1328,7 @@ export function StudentsDirectory({ adminSession }: StudentsDirectoryProps) {
                               className="hover:text-amber-400 hover:underline flex items-center gap-1"
                             >
                               <Mail className="w-3 h-3 text-slate-500" />
-                              <span>{s.email}</span>
+                              <span>{displayEmail}</span>
                             </a>
                           ) : (
                             <span className="text-slate-500">زائر بدون إيميل</span>
@@ -1189,6 +1366,47 @@ export function StudentsDirectory({ adminSession }: StudentsDirectoryProps) {
                                   <Check className="w-3.5 h-3.5" />
                                 )}
                                 <span>اعتماد ✅</span>
+                              </button>
+                            )}
+
+                            {/* Verify VIP Toggle */}
+                            {canManageStudents && !s.is_guest && (
+                              <button
+                                onClick={() => handleToggleVerify(s.id, s.is_verified)}
+                                className={`p-1.5 rounded-lg border transition-colors ${
+                                  s.is_verified
+                                    ? 'bg-pink-500/20 text-[#EC4899] border-pink-500/40 shadow-sm'
+                                    : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-[#EC4899]'
+                                }`}
+                                title={s.is_verified ? 'إلغاء شارة الاعتماد والتوثيق' : 'منح الاعتماد والتوثيق VIP'}
+                              >
+                                <BadgeCheck className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+
+                            {/* Unbind Device */}
+                            {canManageStudents && !s.is_guest && (
+                              <button
+                                onClick={() => handleUnbindDevice(s.id, s.full_name)}
+                                className="p-1.5 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-400 border border-cyan-500/30 transition-colors"
+                                title="فك ارتباط الجهاز 🔄 (السماح بالدخول من جهاز جديد)"
+                              >
+                                <Smartphone className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+
+                            {/* Ban / Unban Toggle */}
+                            {canManageStudents && !s.is_guest && (
+                              <button
+                                onClick={() => handleToggleBan(s.id, s.is_banned)}
+                                className={`p-1.5 rounded-lg border transition-colors ${
+                                  s.is_banned
+                                    ? 'bg-rose-500/20 text-rose-400 border-rose-500/50'
+                                    : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-rose-400'
+                                }`}
+                                title={s.is_banned ? 'فك الحظر عن هذا الطالب' : 'حظر نهائي 🚫'}
+                              >
+                                <Ban className="w-3.5 h-3.5" />
                               </button>
                             )}
 

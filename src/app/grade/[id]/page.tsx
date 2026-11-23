@@ -21,8 +21,8 @@ export async function generateMetadata({ params }: GradePageProps) {
   const name = gradeNames[id] || 'الفرقة الدراسية';
 
   return {
-    title: `${name} | منصة الدستور التعليمية - كلية الحقوق جامعة مدينة السادات`,
-    description: `محاضرات وملخصات وفيديوهات ${name} بكلية الحقوق جامعة مدينة السادات`,
+    title: `${name} | منصة الدستور التعليمية`,
+    description: `محاضرات وملخصات واختبارات ${name} على منصة الدستور التعليمية للعلوم القانونية`,
   };
 }
 

@@ -19,12 +19,15 @@ import {
   Camera,
   UserCheck,
   Clock,
+  Scale,
+  MessageCircle,
 } from 'lucide-react';
 import { useStudentAuth } from '@/context/StudentAuthContext';
 import { AcademicYearId, StudentGender, StudyType } from '@/types';
 import { ACADEMIC_YEARS, COLLEGE_NAME, PLATFORM_NAME } from '@/lib/constants';
 import { compressImageFile, isReservedName, normalizeArabicText, validateEgyptianPhone, validateStudentName } from '@/lib/authUtils';
 import { supabase } from '@/lib/supabase';
+import { LegalContractModal } from '@/components/legal/LegalContractModal';
 
 export function StudentAuthModal() {
   const {
@@ -57,18 +60,27 @@ export function StudentAuthModal() {
   const [success, setSuccess] = useState('');
 
   // Registration Flow Step
-  const [regStep, setRegStep] = useState<'form' | 'otp' | 'pending_approval'>('form');
-  const [otpCode, setOtpCode] = useState('');
-  const [otpTimer, setOtpTimer] = useState(0);
+  const [regStep, setRegStep] = useState<'form' | 'pending_approval'>('form');
+  const [registeredCode, setRegisteredCode] = useState('');
+  const [approvalWhatsApp, setApprovalWhatsApp] = useState('201000000000');
 
-  // OTP Countdown Timer
+  // Legal Terms & Contract Modal
+  const [termsAccepted, setTermsAccepted] = useState(false);
+  const [isContractOpen, setIsContractOpen] = useState(false);
+
+  // Fetch dynamic whatsapp approval number from admin_security
   useEffect(() => {
-    if (otpTimer <= 0) return;
-    const interval = setInterval(() => {
-      setOtpTimer((prev) => prev - 1);
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [otpTimer]);
+    supabase
+      .from('admin_security')
+      .select('whatsapp_approval_number')
+      .eq('id', 'primary')
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data?.whatsapp_approval_number) {
+          setApprovalWhatsApp(data.whatsapp_approval_number);
+        }
+      });
+  }, []);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -98,6 +110,18 @@ export function StudentAuthModal() {
     e.preventDefault();
     setError('');
     setSuccess('');
+
+    // 0. Headless Bot Check
+    if (typeof navigator !== 'undefined' && ((navigator as any).webdriver || (window as any).__nightmare || (window as any)._phantom)) {
+      setError('تم رصد بيئة تصفح مؤتمتة غير آمنة (Bot/Automated Browser). يرجى استخدام متصفح قياسي.');
+      return;
+    }
+
+    // 0.1 Check Terms Consent
+    if (!termsAccepted) {
+      setError('يجب قراءة شروط الاستخدام والعقد القانوني المكون من 20 مادة والموافقة عليه أولاً لإتمام التسجيل.');
+      return;
+    }
 
     // 1. Validate Full Name
     const nameVal = validateStudentName(fullName);
@@ -175,69 +199,7 @@ export function StudentAuthModal() {
         }
       }
 
-      // 7. Trigger Supabase Email OTP
-      try {
-        await supabase.auth.signInWithOtp({
-          email: cleanEmail,
-          options: {
-            shouldCreateUser: true,
-          },
-        });
-      } catch (otpErr) {
-        console.warn('Supabase OTP trigger warning:', otpErr);
-      }
-
-      // Advance to OTP step
-      setRegStep('otp');
-      setOtpTimer(60);
-      setSuccess(`تم إرسال رمز التحقق (OTP) إلى بريدك الإلكتروني: ${cleanEmail}`);
-    } catch (err: any) {
-      setError(err?.message || 'حدث خطأ أثناء فحص البيانات');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  // Confirm OTP and complete registration
-  const handleVerifyOtpAndRegister = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const token = otpCode.trim();
-    if (!token || token.length < 6) {
-      setError('يرجى إدخال رمز التحقق المكون من 6 أرقام');
-      return;
-    }
-
-    setIsSubmitting(true);
-    setError('');
-
-    try {
-      const cleanEmail = email.trim().toLowerCase();
-
-      // Verify OTP with Supabase Auth
-      let isValidToken = false;
-      try {
-        const { data: vData, error: vError } = await supabase.auth.verifyOtp({
-          email: cleanEmail,
-          token,
-          type: 'email',
-        });
-        if (!vError && vData?.session) {
-          isValidToken = true;
-        } else if (token === '123456' || token === '202600') {
-          // Dev sandbox bypass
-          isValidToken = true;
-        }
-      } catch {
-        if (token === '123456' || token === '202600') isValidToken = true;
-      }
-
-      if (!isValidToken) {
-        setError('رمز التحقق (OTP) غير صحيح أو انتهت صلاحيته. يرجى التحقق من بريدك وإعادة المحاولة.');
-        setIsSubmitting(false);
-        return;
-      }
-
-      // Register official student
+      // 7. Register official student directly without Email OTP
       const res = await register({
         full_name: fullName,
         email: cleanEmail,
@@ -246,46 +208,31 @@ export function StudentAuthModal() {
         academic_year: academicYear,
         study_type: studyType,
         avatar_url: avatarPreview,
-        phone,
+        phone: cleanPhone,
+        terms_accepted_at: new Date().toISOString(),
+        contract_version: 'v2.0-EG',
       });
 
       if (!res.success) {
         setError(res.error || 'فشل إتمام التسجيل');
       } else if (res.pendingApproval) {
+        setRegisteredCode(res.student?.student_code || '');
         setRegStep('pending_approval');
         setSuccess('');
       } else {
-        setSuccess('تم تأكيد البريد الإلكتروني وإنشاء الكارنيه الجامعي بنجاح!');
+        setSuccess('تم إنشاء الحساب والكارنيه الجامعي بنجاح!');
       }
     } catch (err: any) {
-      setError(err?.message || 'فشل التحقق من الرمز');
+      setError(err?.message || 'حدث خطأ أثناء فحص البيانات');
     } finally {
       setIsSubmitting(false);
-    }
-  };
-
-  const handleResendOtp = async () => {
-    if (otpTimer > 0) return;
-    try {
-      await supabase.auth.signInWithOtp({
-        email: email.trim().toLowerCase(),
-      });
-      setOtpTimer(60);
-      setSuccess('تم إعادة إرسال رمز التحقق إلى بريدك الإلكتروني بنجاح');
-    } catch {
-      setError('تعذر إعادة إرسال الرمز، يرجى المحاولة لاحقاً');
     }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (mode === 'register') {
-      if (regStep === 'form') {
-        return handleInitiateRegistration(e);
-      } else if (regStep === 'otp') {
-        return handleVerifyOtpAndRegister(e);
-      }
-      return;
+      return handleInitiateRegistration(e);
     }
 
     setError('');
@@ -383,7 +330,7 @@ export function StudentAuthModal() {
           </div>
 
           {regStep === 'pending_approval' ? (
-            /* PENDING APPROVAL VIEW */
+            /* PENDING APPROVAL VIEW WITH WHATSAPP CONFIRMATION BUTTON */
             <div className="py-6 px-4 text-center space-y-4">
               <div className="w-16 h-16 rounded-3xl bg-amber-500/15 border-2 border-amber-500/40 text-amber-500 flex items-center justify-center mx-auto shadow-lg shadow-amber-500/10">
                 <Clock className="w-8 h-8 animate-pulse" />
@@ -391,29 +338,55 @@ export function StudentAuthModal() {
 
               <div className="space-y-1.5">
                 <h4 className="text-base font-black text-slate-900 dark:text-white">
-                  الحساب قيد المراجعة والاعتماد ⏳
+                  تم تسجيل حسابك بنجاح وبانتظار الاعتماد ⏳
                 </h4>
                 <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed max-w-sm mx-auto">
-                  تم استلام وتوثيق طلبك بنجاح! حسابك حالياً بانتظار اعتماد إدارة كلية الحقوق (منصة الدستور). ستتمكن من الدخول واستعراض المحاضرات فور تفعيل حسابك من قبل المشرفين.
+                  تم توثيق بياناتك على منصة الدستور التعليمية. يرجى الضغط على الزر الأخضر أدناه لإرسال بياناتك للمشرف عبر واتساب لاعتماد وتفعيل حسابك والكارنيه فورياً.
                 </p>
               </div>
 
-              <div className="p-3.5 rounded-2xl bg-slate-100 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 text-xs text-slate-500 dark:text-slate-400 space-y-1">
-                <div className="font-bold text-slate-800 dark:text-slate-200">الاسم: {fullName || 'طالب مسجل'}</div>
-                {email && <div className="font-mono text-[11px]">البريد: {email}</div>}
-                {phone && <div className="font-mono text-[11px]" dir="ltr">{phone}</div>}
+              <div className="p-3.5 rounded-2xl bg-slate-100 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 text-xs text-slate-500 dark:text-slate-400 space-y-1.5 text-right" dir="rtl">
+                <div className="font-bold text-slate-800 dark:text-slate-200 flex justify-between">
+                  <span>الاسم الكامل:</span>
+                  <span className="text-amber-500">{fullName || 'طالب مسجل'}</span>
+                </div>
+                {registeredCode && (
+                  <div className="flex justify-between font-mono text-[11px]">
+                    <span>كود القيد (ID):</span>
+                    <span className="text-emerald-400 font-bold">{registeredCode}</span>
+                  </div>
+                )}
+                {email && (
+                  <div className="flex justify-between font-mono text-[11px]">
+                    <span>البريد الإلكتروني:</span>
+                    <span className="text-slate-400">{email}</span>
+                  </div>
+                )}
+                {phone && (
+                  <div className="flex justify-between font-mono text-[11px]">
+                    <span>رقم الهاتف المحمول:</span>
+                    <span className="text-slate-400" dir="ltr">{phone}</span>
+                  </div>
+                )}
+                <div className="flex justify-between text-[11px]">
+                  <span>الفرقة والشعبة:</span>
+                  <span className="text-slate-400">
+                    {ACADEMIC_YEARS.find((y) => y.id === academicYear)?.name || academicYear} • {studyType}
+                  </span>
+                </div>
               </div>
 
               <div className="space-y-2 pt-2">
                 <a
-                  href={`https://wa.me/201000000000?text=${encodeURIComponent(
-                    `مرحباً، قمت بإنشاء حساب جديد على منصة الدستور التعليمية (حقوق السادات) باسم: ${fullName} وأرغب في سرعة اعتماده وتفعيله.`
+                  href={`https://wa.me/${(approvalWhatsApp || '201000000000').replace(/\D/g, '')}?text=${encodeURIComponent(
+                    `مرحباً إدارة منصة الدستور التعليمية،\nأود طلب اعتماد وتفعيل حسابي الطلابي:\n👤 الاسم: ${fullName}\n🆔 كود القيد: ${registeredCode || 'جديد'}\n📱 الهاتف: ${phone}\n📧 البريد: ${email}\nالفرقة: ${ACADEMIC_YEARS.find((y) => y.id === academicYear)?.name || academicYear} - الشعبة: ${studyType}`
                   )}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="w-full py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/20 transition-all active:scale-95"
+                  className="w-full py-3 rounded-2xl bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-500 hover:to-green-500 text-white font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/30 transition-all active:scale-95"
                 >
-                  <span>تواصل عبر واتساب لسرعة الاعتماد 💬</span>
+                  <MessageCircle className="w-4 h-4 fill-current" />
+                  <span>إرسال بياناتي لاعتماد الحساب عبر واتساب 💬</span>
                 </a>
 
                 <button
@@ -423,96 +396,12 @@ export function StudentAuthModal() {
                     setMode('login');
                     setError('');
                   }}
-                  className="w-full py-2 rounded-xl bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-semibold hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors cursor-pointer"
+                  className="w-full py-2.5 rounded-xl bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-semibold hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors cursor-pointer"
                 >
                   العودة لتسجيل الدخول
                 </button>
               </div>
             </div>
-          ) : regStep === 'otp' ? (
-            /* EMAIL OTP CONFIRMATION VIEW */
-            <form onSubmit={handleSubmit} className="space-y-4 py-3">
-              <div className="text-center space-y-1">
-                <div className="w-12 h-12 rounded-2xl bg-amber-500/15 border border-amber-500/30 text-amber-500 flex items-center justify-center mx-auto mb-2">
-                  <Mail className="w-6 h-6 animate-bounce" />
-                </div>
-                <h4 className="text-sm font-black text-slate-900 dark:text-white">
-                  تأكيد رمز التحقق (Email OTP)
-                </h4>
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  أدخل رمز التحقق المكون من 6 أرقام المرسل إلى بريدك:
-                  <br />
-                  <strong className="text-amber-500 font-mono">{email}</strong>
-                </p>
-              </div>
-
-              <div>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  maxLength={6}
-                  value={otpCode}
-                  onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ''))}
-                  placeholder="6 أرقام (مثال: 123456)..."
-                  required
-                  dir="ltr"
-                  className="w-full h-12 text-center text-xl font-mono font-bold tracking-widest rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 text-amber-500 focus:outline-none focus:border-amber-500"
-                />
-              </div>
-
-              {error && (
-                <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-500 dark:text-rose-300 text-xs flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 shrink-0" />
-                  <span>{error}</span>
-                </div>
-              )}
-
-              {success && (
-                <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-600 dark:text-emerald-300 text-xs flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 shrink-0" />
-                  <span>{success}</span>
-                </div>
-              )}
-
-              <div className="space-y-2 pt-1">
-                <button
-                  type="submit"
-                  disabled={isSubmitting || otpCode.length < 6}
-                  className="w-full h-11 rounded-2xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black text-xs sm:text-sm shadow-lg shadow-amber-500/20 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer"
-                >
-                  {isSubmitting ? (
-                    <Loader2 className="w-5 h-5 animate-spin" />
-                  ) : (
-                    <>
-                      <CheckCircle2 className="w-4 h-4" />
-                      <span>تأكيد الرمز وإتمام التسجيل</span>
-                    </>
-                  )}
-                </button>
-
-                <div className="flex items-center justify-between text-xs pt-1">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setRegStep('form');
-                      setError('');
-                    }}
-                    className="text-slate-500 hover:text-slate-800 dark:hover:text-white cursor-pointer"
-                  >
-                    ← تعديل البيانات
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handleResendOtp}
-                    disabled={otpTimer > 0}
-                    className="text-amber-500 hover:underline disabled:text-slate-400 font-bold cursor-pointer"
-                  >
-                    {otpTimer > 0 ? `إعادة الإرسال بعد (${otpTimer} ثانية)` : 'إعادة إرسال الرمز'}
-                  </button>
-                </div>
-              </div>
-            </form>
           ) : (
             <>
               {/* Switch Mode Tabs */}
@@ -807,6 +696,35 @@ export function StudentAuthModal() {
                   </div>
                 )}
 
+                {/* Mandatory 20-Article Legal Charter Consent */}
+                {mode === 'register' && (
+                  <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 space-y-1.5">
+                    <label className="flex items-start gap-2.5 cursor-pointer text-xs select-none">
+                      <input
+                        type="checkbox"
+                        checked={termsAccepted}
+                        onChange={(e) => setTermsAccepted(e.target.checked)}
+                        className="w-4 h-4 mt-0.5 rounded border-slate-300 dark:border-slate-700 text-amber-500 focus:ring-amber-500 shrink-0 cursor-pointer"
+                      />
+                      <span className="text-[11px] leading-relaxed text-slate-600 dark:text-slate-300">
+                        أقر بأنني قرأت ووافقت بكامل الأهلية المعتبرة قانوناً على{' '}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            setIsContractOpen(true);
+                          }}
+                          className="font-bold text-amber-500 hover:text-amber-400 underline underline-offset-2 inline-flex items-center gap-0.5 cursor-pointer"
+                        >
+                          <Scale className="w-3 h-3 inline" />
+                          <span>شروط الاستخدام والعقد القانوني المكون من 20 مادة</span>
+                        </button>
+                        {' '}وفقاً للقانون رقم 15 لسنة 2004 والقانون رقم 151 لسنة 2020.
+                      </span>
+                    </label>
+                  </div>
+                )}
+
                 {/* Error & Success Messages */}
                 {error && (
                   <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-500 dark:text-rose-300 text-xs flex items-center gap-2">
@@ -834,7 +752,7 @@ export function StudentAuthModal() {
                     ) : mode === 'register' ? (
                       <>
                         <Sparkles className="w-4 h-4" />
-                        <span>متابعة وتأكيد البريد (OTP) ←</span>
+                        <span>إنشاء الحساب واعتماد الكارنيه 🎓</span>
                       </>
                     ) : mode === 'guest' ? (
                       <>
@@ -854,6 +772,13 @@ export function StudentAuthModal() {
           )}
         </motion.div>
       </div>
+
+      {/* 20-Article Legal Contract Reader Modal */}
+      <LegalContractModal
+        isOpen={isContractOpen}
+        onClose={() => setIsContractOpen(false)}
+        onAccept={() => setTermsAccepted(true)}
+      />
     </AnimatePresence>
   );
 }

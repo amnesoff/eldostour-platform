@@ -9,6 +9,8 @@ import {
   validateStudentName,
   generateSequentialStudentCode,
   generateGuestCode,
+  getDeviceFingerprint,
+  getDeviceInfoString,
 } from '@/lib/authUtils';
 
 interface StudentAuthContextType {
@@ -20,7 +22,7 @@ interface StudentAuthContextType {
   closeAuthModal: () => void;
   modalDefaultMode: 'login' | 'register' | 'guest';
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string; pendingApproval?: boolean }>;
-  register: (data: RegisterStudentData) => Promise<{ success: boolean; error?: string; pendingApproval?: boolean }>;
+  register: (data: RegisterStudentData) => Promise<{ success: boolean; error?: string; pendingApproval?: boolean; student?: Student }>;
   registerGuest: (data: GuestStudentData) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
   updateStudentLocally: (updated: Student) => void;
@@ -136,6 +138,44 @@ export function StudentAuthProvider({ children }: { children: React.ReactNode })
         };
       }
 
+      // 1. Check if student is permanently banned
+      if (data.is_banned) {
+        return {
+          success: false,
+          error: 'تم حظر هذا الحساب نهائياً لمخالفة بنود العقد وشروط الاستخدام 🚫',
+        };
+      }
+
+      // 2. Single-Device Lock check
+      const currentFingerprint = await getDeviceFingerprint();
+      const currentDeviceInfo = getDeviceInfoString();
+
+      if (data.device_fingerprint && data.device_fingerprint !== currentFingerprint) {
+        return {
+          success: false,
+          error: 'عذراً، هذا الحساب مرتبط بجهاز آخر مصرح به. لحماية العضوية يمنع تشغيل الحساب من جهاز ثانٍ. يمكنك طلب فك الارتباط من الإدارة.',
+        };
+      }
+
+      // Bind device if not bound, and update activity
+      await supabase
+        .from('students')
+        .update({
+          device_fingerprint: data.device_fingerprint || currentFingerprint,
+          last_device_info: currentDeviceInfo,
+          last_active_at: new Date().toISOString(),
+          activity_score: (data.activity_score || 0) + 1,
+        })
+        .eq('id', data.id);
+
+      sessionStorage.setItem(
+        'eldostour_security_stamp',
+        JSON.stringify({
+          device: currentDeviceInfo,
+          time: new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }),
+        })
+      );
+
       const loggedStudent: Student = {
         id: data.id,
         student_code: data.student_code,
@@ -148,6 +188,12 @@ export function StudentAuthProvider({ children }: { children: React.ReactNode })
         phone: data.phone || '',
         is_guest: data.is_guest || false,
         is_approved: data.is_approved !== false,
+        is_verified: data.is_verified || false,
+        is_banned: data.is_banned || false,
+        device_fingerprint: data.device_fingerprint || currentFingerprint,
+        last_device_info: currentDeviceInfo,
+        activity_score: (data.activity_score || 0) + 1,
+        last_active_at: new Date().toISOString(),
         created_at: data.created_at,
       };
 
@@ -174,7 +220,7 @@ export function StudentAuthProvider({ children }: { children: React.ReactNode })
   // Register Official Student
   const register = async (
     regData: RegisterStudentData
-  ): Promise<{ success: boolean; error?: string; pendingApproval?: boolean }> => {
+  ): Promise<{ success: boolean; error?: string; pendingApproval?: boolean; student?: Student }> => {
     const cleanEmail = regData.email.trim().toLowerCase();
     const cleanName = regData.full_name.trim();
 
@@ -209,15 +255,25 @@ export function StudentAuthProvider({ children }: { children: React.ReactNode })
         };
       }
 
-      // 2. Check if manual approval is required
+      // 2. Check if registration is paused or manual approval is required
       const { data: secRow } = await supabase
         .from('admin_security')
-        .select('manual_approval_enabled')
+        .select('manual_approval_enabled, registration_paused')
         .eq('id', 'primary')
         .maybeSingle();
 
+      if (secRow?.registration_paused) {
+        return {
+          success: false,
+          error: 'عذراً، التسجيل متوقف مؤقتاً بقرار من إدارة المنصة لإجراء صيانة أمنية. يرجى المحاولة لاحقاً.',
+        };
+      }
+
       const isManualApprovalEnabled = secRow?.manual_approval_enabled === true;
       const isApproved = !isManualApprovalEnabled;
+
+      const currentFingerprint = await getDeviceFingerprint();
+      const currentDeviceInfo = getDeviceInfoString();
 
       // 3. Generate sequential student code (starting from 1001)
       const { count } = await supabase.from('students').select('*', { count: 'exact', head: true });
@@ -239,6 +295,14 @@ export function StudentAuthProvider({ children }: { children: React.ReactNode })
           phone: regData.phone || '',
           is_guest: false,
           is_approved: isApproved,
+          is_verified: false,
+          is_banned: false,
+          device_fingerprint: currentFingerprint,
+          last_device_info: currentDeviceInfo,
+          activity_score: 5,
+          last_active_at: new Date().toISOString(),
+          terms_accepted_at: regData.terms_accepted_at || new Date().toISOString(),
+          contract_version: regData.contract_version || 'v2.0-EG',
         })
         .select()
         .single();
@@ -264,7 +328,7 @@ export function StudentAuthProvider({ children }: { children: React.ReactNode })
 
       if (!isApproved) {
         // Pending manual approval -> don't grant full auto-access
-        return { success: true, pendingApproval: true };
+        return { success: true, pendingApproval: true, student: newStudent };
       }
 
       setStudent(newStudent);

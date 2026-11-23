@@ -45,7 +45,7 @@ export function AnimatedLogo({
           {!imageError ? (
             <Image
               src="/logo.png"
-              alt="شعار منصة الدستور - كلية الحقوق جامعة مدينة السادات"
+              alt="شعار منصة الدستور التعليمية"
               width={current.img}
               height={current.img}
               className="object-cover w-full h-full rounded-full"
