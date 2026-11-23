@@ -2,16 +2,21 @@ export type AcademicYearId = 1 | 2 | 3 | 4;
 
 export type GenderTheme = 'blue' | 'burgundy';
 export type StudentGender = 'male' | 'female';
+export type StudyType = 'انتظام' | 'انتساب';
 export type OccasionTheme = 'default' | 'ramadan' | 'new_year' | 'exams' | 'valentine';
 
 export interface Student {
   id: string;
   student_code: string;
   full_name: string;
-  email: string;
+  email?: string;
   password_hash?: string;
   gender: StudentGender;
   academic_year: AcademicYearId;
+  study_type?: StudyType;
+  avatar_url?: string;
+  phone?: string;
+  is_guest?: boolean;
   created_at: string;
 }
 
@@ -21,6 +26,24 @@ export interface RegisterStudentData {
   password: string;
   gender: StudentGender;
   academic_year: AcademicYearId;
+  study_type?: StudyType;
+  avatar_url?: string;
+  phone?: string;
+}
+
+export interface GuestStudentData {
+  full_name: string;
+  phone: string;
+  academic_year?: AcademicYearId;
+  gender?: StudentGender;
+  study_type?: StudyType;
+}
+
+export interface GradeCover {
+  year: AcademicYearId;
+  cover_image_url: string;
+  title?: string;
+  updated_at?: string;
 }
 
 export type CharacterPresetId =
@@ -129,6 +152,7 @@ export interface SiteSettings {
   social_whatsapp_group: string;
   cram_mode_enabled?: boolean;
   character_widget?: CharacterWidgetSettings;
+  grade_covers?: Record<AcademicYearId, string>;
 }
 
 // Homepage Section Ordering & Visibility CMS

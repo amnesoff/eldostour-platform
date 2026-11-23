@@ -439,16 +439,30 @@ CREATE TABLE IF NOT EXISTS public.students (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     student_code TEXT UNIQUE NOT NULL,
     full_name TEXT NOT NULL,
-    email TEXT UNIQUE NOT NULL,
-    password_hash TEXT NOT NULL,
+    email TEXT UNIQUE,
+    password_hash TEXT,
     gender TEXT NOT NULL CHECK (gender IN ('male', 'female')),
     academic_year INTEGER NOT NULL CHECK (academic_year >= 1 AND academic_year <= 4),
+    study_type TEXT DEFAULT 'انتظام' NOT NULL CHECK (study_type IN ('انتظام', 'انتساب')),
+    avatar_url TEXT DEFAULT '',
+    phone TEXT DEFAULT '',
+    is_guest BOOLEAN DEFAULT false NOT NULL,
     created_at TIMESTAMPTZ DEFAULT now() NOT NULL
 );
+
+-- Idempotent column additions if table already existed
+ALTER TABLE public.students ADD COLUMN IF NOT EXISTS study_type TEXT DEFAULT 'انتظام' NOT NULL;
+ALTER TABLE public.students ADD COLUMN IF NOT EXISTS avatar_url TEXT DEFAULT '';
+ALTER TABLE public.students ADD COLUMN IF NOT EXISTS phone TEXT DEFAULT '';
+ALTER TABLE public.students ADD COLUMN IF NOT EXISTS is_guest BOOLEAN DEFAULT false NOT NULL;
+ALTER TABLE public.students ALTER COLUMN email DROP NOT NULL;
+ALTER TABLE public.students ALTER COLUMN password_hash DROP NOT NULL;
 
 CREATE INDEX IF NOT EXISTS idx_students_student_code ON public.students(student_code);
 CREATE INDEX IF NOT EXISTS idx_students_email ON public.students(email);
 CREATE INDEX IF NOT EXISTS idx_students_academic_year ON public.students(academic_year);
+CREATE INDEX IF NOT EXISTS idx_students_phone ON public.students(phone);
+CREATE INDEX IF NOT EXISTS idx_students_is_guest ON public.students(is_guest);
 
 -- Enable RLS and permissions for students
 ALTER TABLE public.students ENABLE ROW LEVEL SECURITY;
@@ -470,5 +484,50 @@ END $$;
 
 GRANT ALL ON TABLE public.students TO anon, authenticated, service_role;
 
+-- 18. Create Grade Covers Table (Custom background thumbnails for Academic Years 1-4)
+CREATE TABLE IF NOT EXISTS public.grade_covers (
+    year INTEGER PRIMARY KEY CHECK (year >= 1 AND year <= 4),
+    cover_image_url TEXT NOT NULL DEFAULT '',
+    title TEXT NOT NULL DEFAULT '',
+    updated_at TIMESTAMPTZ DEFAULT now() NOT NULL
+);
+
+ALTER TABLE public.grade_covers ENABLE ROW LEVEL SECURITY;
+
+DO $$ 
+BEGIN
+    DROP POLICY IF EXISTS "Public read grade_covers" ON public.grade_covers;
+    CREATE POLICY "Public read grade_covers" ON public.grade_covers FOR SELECT USING (true);
+
+    DROP POLICY IF EXISTS "Public insert grade_covers" ON public.grade_covers;
+    CREATE POLICY "Public insert grade_covers" ON public.grade_covers FOR INSERT WITH CHECK (true);
+
+    DROP POLICY IF EXISTS "Public update grade_covers" ON public.grade_covers;
+    CREATE POLICY "Public update grade_covers" ON public.grade_covers FOR UPDATE USING (true);
+
+    DROP POLICY IF EXISTS "Public delete grade_covers" ON public.grade_covers;
+    CREATE POLICY "Public delete grade_covers" ON public.grade_covers FOR DELETE USING (true);
+END $$;
+
+GRANT ALL ON TABLE public.grade_covers TO anon, authenticated, service_role;
+
+-- 19. Ensure avatars storage bucket exists
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('avatars', 'avatars', true)
+ON CONFLICT (id) DO NOTHING;
+
+DROP POLICY IF EXISTS "Public read avatars" ON storage.objects;
+CREATE POLICY "Public read avatars" ON storage.objects FOR SELECT TO anon, authenticated USING (bucket_id = 'avatars');
+
+DROP POLICY IF EXISTS "Public insert avatars" ON storage.objects;
+CREATE POLICY "Public insert avatars" ON storage.objects FOR INSERT TO anon, authenticated WITH CHECK (bucket_id = 'avatars');
+
+DROP POLICY IF EXISTS "Public update avatars" ON storage.objects;
+CREATE POLICY "Public update avatars" ON storage.objects FOR UPDATE TO anon, authenticated USING (bucket_id = 'avatars');
+
+DROP POLICY IF EXISTS "Public delete avatars" ON storage.objects;
+CREATE POLICY "Public delete avatars" ON storage.objects FOR DELETE TO anon, authenticated USING (bucket_id = 'avatars');
+
 ALTER PUBLICATION supabase_realtime ADD TABLE public.subject_covers;
 ALTER PUBLICATION supabase_realtime ADD TABLE public.students;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.grade_covers;

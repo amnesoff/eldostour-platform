@@ -140,7 +140,7 @@ export function Navbar({ onOpenSearch }: NavbarProps) {
               </button>
             ) : (
               <button
-                onClick={openAuthModal}
+                onClick={() => openAuthModal('register')}
                 className="flex items-center justify-center gap-1.5 h-9 sm:h-10 px-2 sm:px-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800/80 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700/60 text-xs font-bold transition-all active:scale-95"
                 title="تسجيل الدخول / إنشاء حساب طالب جديد"
                 aria-label="تسجيل الدخول"

@@ -143,28 +143,28 @@ export function ThemeCharacterWidget({ initialSettings }: ThemeCharacterWidgetPr
   return (
     <div
       dir="rtl"
-      className={`fixed bottom-24 sm:bottom-28 z-40 select-none pointer-events-none transition-all duration-500 ${
-        isRight ? 'right-0 sm:right-2' : 'left-0 sm:left-2'
+      className={`fixed bottom-36 sm:bottom-40 md:bottom-32 z-40 select-none pointer-events-none transition-all duration-500 ${
+        isRight ? 'right-2 sm:right-6 md:right-8' : 'left-2 sm:left-6 md:left-8'
       }`}
     >
       <AnimatePresence>
         {isVisible && (
           <motion.div
             initial={{
-              x: isRight ? 160 : -160,
+              y: 40,
               opacity: 0,
-              scale: 0.85,
+              scale: 0.88,
             }}
             animate={{
-              x: isRight ? 10 : -10,
+              y: 0,
               opacity: 1,
               scale: isWiggling ? 1.08 : 1,
               rotate: isWiggling ? [0, -6, 6, -4, 0] : 0,
             }}
             exit={{
-              x: isRight ? 180 : -180,
+              y: 50,
               opacity: 0,
-              scale: 0.85,
+              scale: 0.88,
             }}
             transition={{
               type: 'spring',
@@ -180,20 +180,20 @@ export function ThemeCharacterWidget({ initialSettings }: ThemeCharacterWidgetPr
               initial={{ opacity: 0, y: 15, scale: 0.8 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               transition={{ delay: 0.2 }}
-              className={`relative mb-1 px-3.5 py-2.5 max-w-[200px] sm:max-w-[240px] rounded-2xl shadow-2xl backdrop-blur-md text-right border ${
+              className={`relative mb-1 px-3.5 py-2.5 max-w-[190px] sm:max-w-[240px] rounded-2xl shadow-2xl backdrop-blur-md text-right border ${
                 isGirlSign
                   ? 'bg-amber-950/90 text-amber-200 border-amber-500/50 shadow-amber-500/20'
                   : 'bg-slate-900/95 text-white border-amber-400/50 shadow-slate-950/60'
               }`}
             >
-              {/* Dismiss Button */}
+              {/* TASK 3: High-contrast, easy-to-tap Close Button (min 32px) */}
               <button
                 onClick={handleDismiss}
-                className="absolute -top-2 -left-2 w-5 h-5 rounded-full bg-slate-800 hover:bg-red-600 text-slate-300 hover:text-white flex items-center justify-center text-xs shadow-md transition-colors"
-                title="إخفاء الشخصية"
+                className="absolute -top-3.5 -left-3.5 min-w-[32px] min-h-[32px] w-8 h-8 rounded-full bg-red-600 hover:bg-red-700 text-white flex items-center justify-center shadow-xl border-2 border-white dark:border-slate-900 transition-all hover:scale-110 active:scale-95 cursor-pointer z-50 pointer-events-auto"
+                title="إغلاق وإخفاء الشخصية"
                 aria-label="إغلاق"
               >
-                <X className="w-3 h-3" />
+                <X className="w-4 h-4 stroke-[2.5]" />
               </button>
 
               <div className="flex items-start gap-1.5">

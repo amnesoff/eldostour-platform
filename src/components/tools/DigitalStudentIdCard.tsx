@@ -14,12 +14,14 @@ import {
   ShieldCheck,
   AlertCircle,
   GraduationCap,
+  Camera,
 } from 'lucide-react';
 import { AnimatedLogo } from '@/components/ui/AnimatedLogo';
 import { useTheme } from '@/context/ThemeContext';
 import { useStudentAuth } from '@/context/StudentAuthContext';
 import { COLLEGE_NAME, PLATFORM_NAME, LEADERSHIP_BAR_TEXT, ACADEMIC_YEARS } from '@/lib/constants';
-import { AcademicYearId } from '@/types';
+import { AcademicYearId, StudyType } from '@/types';
+import { compressImageFile } from '@/lib/authUtils';
 
 interface DigitalStudentIdCardProps {
   isOpen: boolean;
@@ -28,14 +30,19 @@ interface DigitalStudentIdCardProps {
 
 export function DigitalStudentIdCard({ isOpen, onClose }: DigitalStudentIdCardProps) {
   const { gender } = useTheme();
-  const { student, isGuest, openAuthModal } = useStudentAuth();
+  const { student, isGuest, openAuthModal, updateStudentProfile } = useStudentAuth();
 
   const [studentName, setStudentName] = useState('');
   const [year, setYear] = useState<AcademicYearId>(1);
+  const [studyType, setStudyType] = useState<StudyType>('انتظام');
   const [studentIdNumber, setStudentIdNumber] = useState('');
   const [studentEmail, setStudentEmail] = useState('');
+  const [avatarUrl, setAvatarUrl] = useState('');
   const [copied, setCopied] = useState(false);
+  const [isUpdatingPhoto, setIsUpdatingPhoto] = useState(false);
+
   const cardRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Sync state with authenticated student or fallback guest/local state
   useEffect(() => {
@@ -43,14 +50,18 @@ export function DigitalStudentIdCard({ isOpen, onClose }: DigitalStudentIdCardPr
       setStudentName(student.full_name);
       setYear(student.academic_year);
       setStudentIdNumber(student.student_code);
-      setStudentEmail(student.email);
+      setStudentEmail(student.email || '');
+      setStudyType(student.study_type || 'انتظام');
+      setAvatarUrl(student.avatar_url || '');
     } else {
       const savedName = localStorage.getItem('eldostour_student_name') || '';
       const savedYear = Number(localStorage.getItem('eldostour_student_year')) || 1;
+      const savedStudy = (localStorage.getItem('eldostour_study_type') as StudyType) || 'انتظام';
+      const savedAvatar = localStorage.getItem('eldostour_avatar_url') || '';
       let savedId = localStorage.getItem('eldostour_student_id_num');
 
       if (!savedId) {
-        savedId = `DST-${Math.floor(100000 + Math.random() * 900000)}`;
+        savedId = `G-101`;
         localStorage.setItem('eldostour_student_id_num', savedId);
       }
 
@@ -58,14 +69,46 @@ export function DigitalStudentIdCard({ isOpen, onClose }: DigitalStudentIdCardPr
       setYear((savedYear >= 1 && savedYear <= 4 ? savedYear : 1) as AcademicYearId);
       setStudentIdNumber(savedId);
       setStudentEmail('');
+      setStudyType(savedStudy);
+      setAvatarUrl(savedAvatar);
     }
   }, [student, isGuest, isOpen]);
 
-  const handleSaveInfo = (name: string, y: AcademicYearId) => {
+  const handleSaveInfo = async (name: string, y: AcademicYearId, st: StudyType) => {
     setStudentName(name);
     setYear(y);
+    setStudyType(st);
     localStorage.setItem('eldostour_student_name', name);
     localStorage.setItem('eldostour_student_year', String(y));
+    localStorage.setItem('eldostour_study_type', st);
+
+    if (student && !isGuest) {
+      await updateStudentProfile({
+        full_name: name,
+        academic_year: y,
+        study_type: st,
+      });
+    }
+  };
+
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsUpdatingPhoto(true);
+    try {
+      const compressed = await compressImageFile(file, 400);
+      setAvatarUrl(compressed);
+      localStorage.setItem('eldostour_avatar_url', compressed);
+
+      if (student && !isGuest) {
+        await updateStudentProfile({ avatar_url: compressed });
+      }
+    } catch {
+      alert('فشل رفع الصورة، يرجى المحاولة بصورة أخرى');
+    } finally {
+      setIsUpdatingPhoto(false);
+    }
   };
 
   const currentYearObj = ACADEMIC_YEARS.find((y) => y.id === year) || ACADEMIC_YEARS[0];
@@ -76,7 +119,7 @@ export function DigitalStudentIdCard({ isOpen, onClose }: DigitalStudentIdCardPr
       try {
         await navigator.share({
           title: `بطاقة طالب منصة الدستور - ${studentName}`,
-          text: `بطاقتي الأكاديمية الرقمية بكلية الحقوق جامعة مدينة السادات - منصة الدستور التعليمية (${currentYearObj.name}) - رقم القيد: ${studentIdNumber}`,
+          text: `بطاقتي الأكاديمية الرقمية بكلية الحقوق جامعة مدينة السادات - منصة الدستور التعليمية (${currentYearObj.name} - ${studyType}) - رقم القيد: ${studentIdNumber}`,
           url: typeof window !== 'undefined' ? window.location.origin : '',
         });
       } catch {
@@ -84,7 +127,7 @@ export function DigitalStudentIdCard({ isOpen, onClose }: DigitalStudentIdCardPr
       }
     } else {
       await navigator.clipboard.writeText(
-        `بطاقة الطالب: ${studentName} - ${currentYearObj.name} - كلية الحقوق جامعة مدينة السادات - منصة الدستور التعليمية (رقم القيد: ${studentIdNumber})`
+        `بطاقة الطالب: ${studentName} - ${currentYearObj.name} (${studyType}) - كلية الحقوق جامعة مدينة السادات - منصة الدستور التعليمية (رقم القيد: ${studentIdNumber})`
       );
       setCopied(true);
       setTimeout(() => setCopied(false), 2500);
@@ -102,12 +145,12 @@ export function DigitalStudentIdCard({ isOpen, onClose }: DigitalStudentIdCardPr
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-slate-950/80 backdrop-blur-md text-right text-slate-900 dark:text-white">
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-slate-950/80 backdrop-blur-md text-right text-slate-900 dark:text-white" dir="rtl">
         <motion.div
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0, scale: 0.95 }}
-          className="relative w-full max-w-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-amber-500/30 rounded-3xl p-5 sm:p-7 shadow-2xl overflow-hidden flex flex-col max-h-[92vh]"
+          className="relative w-full max-w-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-amber-500/30 rounded-3xl p-5 sm:p-7 shadow-2xl overflow-hidden flex flex-col max-h-[94vh]"
         >
           {/* Close button */}
           <button
@@ -139,7 +182,7 @@ export function DigitalStudentIdCard({ isOpen, onClose }: DigitalStudentIdCardPr
                 )}
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                كارنيه إلكتروني يحمل بياناتك الأكاديمية ورقم القيد بمنصة الدستور
+                كارنيه إلكتروني يحمل بياناتك الأكاديمية، الشعبة، ورقم القيد بمنصة الدستور
               </p>
             </div>
           </div>
@@ -156,9 +199,9 @@ export function DigitalStudentIdCard({ isOpen, onClose }: DigitalStudentIdCardPr
               <button
                 onClick={() => {
                   onClose();
-                  openAuthModal();
+                  openAuthModal('register');
                 }}
-                className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs shadow transition-all active:scale-95"
+                className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs shadow transition-all active:scale-95 cursor-pointer"
               >
                 <UserPlus className="w-3.5 h-3.5" />
                 <span>تسجيل حساب طالب</span>
@@ -166,40 +209,82 @@ export function DigitalStudentIdCard({ isOpen, onClose }: DigitalStudentIdCardPr
             </div>
           )}
 
-          {/* Edit Form for Guests (Registered students have fixed profile) */}
-          {!isRegistered ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4 p-3 rounded-2xl bg-slate-50 dark:bg-slate-950/70 border border-slate-200 dark:border-slate-800">
-              <div>
-                <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  اسم الطالب الثلاثي (معاينة):
-                </label>
-                <input
-                  type="text"
-                  value={studentName}
-                  onChange={(e) => handleSaveInfo(e.target.value, year)}
-                  placeholder="أدخل اسمك الثلاثي..."
-                  className="w-full h-9 px-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white outline-none focus:border-amber-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  الفرقة الدراسية:
-                </label>
-                <select
-                  value={year}
-                  onChange={(e) => handleSaveInfo(studentName, Number(e.target.value) as AcademicYearId)}
-                  className="w-full h-9 px-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white outline-none focus:border-amber-500"
+          {/* Study System & Grade Selector Bar */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-4 p-2.5 rounded-2xl bg-slate-50 dark:bg-slate-950/70 border border-slate-200 dark:border-slate-800 text-xs">
+            {/* Study System Selection (الشعبة) */}
+            <div>
+              <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                الشعبة:
+              </label>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => handleSaveInfo(studentName, year, 'انتظام')}
+                  className={`flex-1 h-8 rounded-lg font-bold transition-all text-xs ${
+                    studyType === 'انتظام'
+                      ? 'bg-amber-500 text-slate-950 shadow-sm'
+                      : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700'
+                  }`}
                 >
-                  {ACADEMIC_YEARS.map((y) => (
-                    <option key={y.id} value={y.id}>
-                      {y.name}
-                    </option>
-                  ))}
-                </select>
+                  انتظام
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSaveInfo(studentName, year, 'انتساب')}
+                  className={`flex-1 h-8 rounded-lg font-bold transition-all text-xs ${
+                    studyType === 'انتساب'
+                      ? 'bg-amber-500 text-slate-950 shadow-sm'
+                      : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700'
+                  }`}
+                >
+                  انتساب
+                </button>
               </div>
             </div>
-          ) : null}
+
+            {/* Academic Year */}
+            <div>
+              <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                الفرقة الدراسية:
+              </label>
+              <select
+                value={year}
+                onChange={(e) =>
+                  handleSaveInfo(studentName, Number(e.target.value) as AcademicYearId, studyType)
+                }
+                className="w-full h-8 px-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white outline-none focus:border-amber-500"
+              >
+                {ACADEMIC_YEARS.map((y) => (
+                  <option key={y.id} value={y.id}>
+                    {y.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Photo Upload Shortcut */}
+            <div className="col-span-2 sm:col-span-1">
+              <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                صورتك الشخصية:
+              </label>
+              <input
+                type="file"
+                ref={fileInputRef}
+                accept="image/*"
+                onChange={handlePhotoUpload}
+                className="hidden"
+              />
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isUpdatingPhoto}
+                className="w-full h-8 px-2 rounded-lg bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold text-xs flex items-center justify-center gap-1.5 transition-all"
+              >
+                <Camera className="w-3.5 h-3.5 text-amber-500" />
+                <span>{avatarUrl ? 'تغيير صورتك' : 'رفع صورتك'}</span>
+              </button>
+            </div>
+          </div>
 
           {/* CARD PREVIEW AREA */}
           <div className="overflow-y-auto pr-1 pb-1">
@@ -238,20 +323,35 @@ export function DigitalStudentIdCard({ isOpen, onClose }: DigitalStudentIdCardPr
                     }`}
                   >
                     <Sparkles className="w-2.5 h-2.5" />
-                    <span>{isRegistered ? 'بطاقة طالب معتمدة' : 'معاينة غير مسجلة'}</span>
+                    <span>{isRegistered ? 'بطاقة طالب معتمدة' : 'معاينة زائر'}</span>
                   </span>
-                  <span className="block text-[9px] text-slate-300 mt-0.5 font-mono" dir="ltr">
+                  <span className="block text-[10px] text-amber-300 mt-0.5 font-mono font-bold" dir="ltr">
                     ID: {studentIdNumber}
                   </span>
                 </div>
               </div>
 
-              {/* Middle Row: Student Photo / Crest + Name & Academic Details */}
+              {/* Middle Row: Student Photo + Name & Academic Details */}
               <div className="relative z-10 my-4 flex items-center gap-4">
-                {/* Crest / Photo placeholder */}
-                <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-white/10 border-2 border-amber-400/50 flex items-center justify-center p-2 shrink-0 shadow-inner">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src="/logo.png" alt="الشعار" className="w-full h-full object-contain" />
+                {/* Student Photo Box with direct change trigger */}
+                <div
+                  onClick={() => fileInputRef.current?.click()}
+                  className="group relative w-18 h-18 sm:w-22 sm:h-22 rounded-2xl bg-white/10 border-2 border-amber-400/60 overflow-hidden flex items-center justify-center shrink-0 shadow-lg cursor-pointer hover:border-amber-300 transition-all"
+                  title="انقر لرفع صورتك الشخصية على الكارنيه"
+                >
+                  {avatarUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={avatarUrl} alt="صورة الطالب" className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="flex flex-col items-center justify-center p-2 text-center">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src="/logo.png" alt="الشعار" className="w-10 h-10 object-contain opacity-80" />
+                      <span className="text-[9px] text-amber-300/80 mt-1">أضف صورتك</span>
+                    </div>
+                  )}
+                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                    <Camera className="w-5 h-5 text-white" />
+                  </div>
                 </div>
 
                 {/* Details */}
@@ -261,16 +361,25 @@ export function DigitalStudentIdCard({ isOpen, onClose }: DigitalStudentIdCardPr
                     {studentName || 'اسم الطالب'}
                   </h3>
 
-                  <div className="flex flex-wrap items-center gap-2 text-xs">
+                  <div className="flex flex-wrap items-center gap-1.5 text-xs">
                     <span className="px-2.5 py-0.5 rounded-lg bg-white/15 text-amber-300 font-bold border border-white/10 flex items-center gap-1">
                       <GraduationCap className="w-3 h-3" />
                       <span>{currentYearObj.name}</span>
                     </span>
-                    <span className="text-[11px] text-slate-300 font-medium">
-                      {isFemale ? 'طالبة نظامية 🟣' : 'طالب نظامي 🔵'}
+
+                    {/* Gender + Study System Badge (طالب/طالبة انتظام أو انتساب) */}
+                    <span className="px-2.5 py-0.5 rounded-lg bg-amber-400/20 text-white font-bold border border-amber-400/30 text-[11px]">
+                      {isFemale
+                        ? studyType === 'انتساب'
+                          ? 'طالبة انتساب 🟣'
+                          : 'طالبة انتظام 🟣'
+                        : studyType === 'انتساب'
+                        ? 'طالب انتساب 🔵'
+                        : 'طالب انتظام 🔵'}
                     </span>
+
                     {studentEmail && (
-                      <span className="text-[10px] text-slate-300 font-mono truncate max-w-[180px] hidden sm:inline" dir="ltr">
+                      <span className="text-[10px] text-slate-300 font-mono truncate max-w-[160px] hidden sm:inline" dir="ltr">
                         {studentEmail}
                       </span>
                     )}
@@ -300,11 +409,11 @@ export function DigitalStudentIdCard({ isOpen, onClose }: DigitalStudentIdCardPr
           </div>
 
           {/* Action Buttons */}
-          <div className="mt-5 pt-3 border-t border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2">
+          <div className="mt-4 pt-3 border-t border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <button
                 onClick={handlePrint}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs shadow-md transition-all active:scale-95"
+                className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs shadow-md transition-all active:scale-95 cursor-pointer"
               >
                 <Printer className="w-4 h-4" />
                 <span>طباعة / حفظ PDF</span>
@@ -312,7 +421,7 @@ export function DigitalStudentIdCard({ isOpen, onClose }: DigitalStudentIdCardPr
 
               <button
                 onClick={handleShare}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-bold text-xs transition-all active:scale-95"
+                className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-bold text-xs transition-all active:scale-95 cursor-pointer"
               >
                 {copied ? <CheckCircle2 className="w-4 h-4 text-emerald-500" /> : <Share2 className="w-4 h-4" />}
                 <span>{copied ? 'تم نسخ البيانات' : 'مشاركة البطاقة'}</span>
@@ -321,7 +430,7 @@ export function DigitalStudentIdCard({ isOpen, onClose }: DigitalStudentIdCardPr
 
             <button
               onClick={onClose}
-              className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
+              className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 cursor-pointer"
             >
               إغلاق
             </button>

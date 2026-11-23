@@ -78,6 +78,12 @@ export const DEFAULT_SITE_SETTINGS: SiteSettings = {
   social_tiktok: 'https://tiktok.com',
   social_whatsapp_group: 'https://chat.whatsapp.com',
   cram_mode_enabled: false,
+  grade_covers: {
+    1: '',
+    2: '',
+    3: '',
+    4: '',
+  },
 };
 
 export const CHARACTER_PRESETS = [
