@@ -6,6 +6,7 @@ import { StudentAuthProvider } from '@/context/StudentAuthContext';
 import { StudentAuthModal } from '@/components/auth/StudentAuthModal';
 import { StudentIdFloatingButton } from '@/components/tools/StudentIdFloatingButton';
 import { PrivacyBanner } from '@/components/legal/PrivacyBanner';
+import { PlatformLockEnforcer } from '@/components/emergency/PlatformLockEnforcer';
 
 const cairo = Cairo({
   subsets: ['arabic', 'latin'],
@@ -57,6 +58,7 @@ export default function RootLayout({
       <body className="min-h-screen flex flex-col font-sans bg-slate-50 dark:bg-[#070c18] text-slate-900 dark:text-slate-100 antialiased selection:bg-amber-500/30 selection:text-amber-300 overflow-x-hidden">
         <ThemeProvider>
           <StudentAuthProvider>
+            <PlatformLockEnforcer />
             {children}
             <StudentAuthModal />
             <StudentIdFloatingButton />

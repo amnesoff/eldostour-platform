@@ -182,9 +182,13 @@ export async function POST(req: NextRequest) {
         const response = NextResponse.json({
           success: true,
           session: sessionPayload,
+          token,
         });
 
-        response.cookies.set('eldostour_admin_token', token, getSecureCookieOptions());
+        const cookieOpts = getSecureCookieOptions();
+        response.cookies.set('eldostour_admin_token', token, cookieOpts);
+        response.cookies.set('v2_admin_token', token, cookieOpts);
+        response.cookies.set('eldostour_admin_session', token, cookieOpts);
         return response;
       } else {
         // Sub-admin PIN check
@@ -224,9 +228,13 @@ export async function POST(req: NextRequest) {
         const response = NextResponse.json({
           success: true,
           session: sessionPayload,
+          token,
         });
 
-        response.cookies.set('eldostour_admin_token', token, getSecureCookieOptions());
+        const cookieOpts = getSecureCookieOptions();
+        response.cookies.set('eldostour_admin_token', token, cookieOpts);
+        response.cookies.set('v2_admin_token', token, cookieOpts);
+        response.cookies.set('eldostour_admin_session', token, cookieOpts);
         return response;
       }
     }
@@ -302,9 +310,13 @@ export async function POST(req: NextRequest) {
         const response = NextResponse.json({
           success: true,
           session: sessionPayload,
+          token,
         });
 
-        response.cookies.set('eldostour_admin_token', token, getSecureCookieOptions());
+        const cookieOpts = getSecureCookieOptions();
+        response.cookies.set('eldostour_admin_token', token, cookieOpts);
+        response.cookies.set('v2_admin_token', token, cookieOpts);
+        response.cookies.set('eldostour_admin_session', token, cookieOpts);
         return response;
       }
 
@@ -321,6 +333,8 @@ export async function POST(req: NextRequest) {
     if (action === 'logout') {
       const response = NextResponse.json({ success: true });
       response.cookies.delete('eldostour_admin_token');
+      response.cookies.delete('v2_admin_token');
+      response.cookies.delete('eldostour_admin_session');
       return response;
     }
 

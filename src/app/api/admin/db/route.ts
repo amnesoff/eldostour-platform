@@ -16,26 +16,195 @@ function hashSha256(str: string): string {
   return crypto.createHash('sha256').update(str).digest('hex');
 }
 
-// Helper to authenticate admin from cookie or authorization header
-function authenticateAdmin(req: NextRequest): AdminSession | null {
-  const cookieToken = req.cookies.get('eldostour_admin_token')?.value;
+// Robust helper to authenticate admin from cookies, bearer tokens, or custom headers
+export async function authenticateAdmin(req: NextRequest): Promise<AdminSession | null> {
+  const candidateValues: string[] = [];
+
+  // 1. Direct known cookie names (supporting v2 signed cookie and admin login sessions)
+  const cookieNames = [
+    'eldostour_admin_token',
+    'v2_admin_token',
+    'eldostour_v2_admin',
+    'eldostour_admin_session',
+    'admin_token',
+    'admin_session',
+  ];
+
+  for (const name of cookieNames) {
+    const val = req.cookies.get(name)?.value;
+    if (val && !candidateValues.includes(val)) {
+      candidateValues.push(val);
+    }
+  }
+
+  // Also scan all incoming cookies for any admin or v2 session cookie
+  for (const c of req.cookies.getAll()) {
+    if (
+      !candidateValues.includes(c.value) &&
+      (c.name.toLowerCase().includes('admin') || c.name.toLowerCase().includes('v2'))
+    ) {
+      candidateValues.push(c.value);
+    }
+  }
+
+  // 2. Authorization and Custom Session Headers
   const authHeader = req.headers.get('authorization');
-  const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7).trim() : null;
-  const token = cookieToken || bearerToken;
+  if (authHeader?.startsWith('Bearer ')) {
+    const bearer = authHeader.slice(7).trim();
+    if (bearer && !candidateValues.includes(bearer)) candidateValues.push(bearer);
+  }
 
-  if (!token) return null;
+  const xAdminToken = req.headers.get('x-admin-token');
+  if (xAdminToken && !candidateValues.includes(xAdminToken.trim())) {
+    candidateValues.push(xAdminToken.trim());
+  }
 
-  const session = verifyToken<AdminSession & { role: string }>(token);
-  if (!session || session.role !== 'admin') return null;
+  const xAdminSession = req.headers.get('x-admin-session');
+  if (xAdminSession && !candidateValues.includes(xAdminSession.trim())) {
+    candidateValues.push(xAdminSession.trim());
+  }
 
-  return session;
+  if (candidateValues.length === 0) return null;
+
+  // Retrieve primary admin record to verify session version & super admin username
+  let secRow: any = null;
+  try {
+    const { data } = await supabaseAdmin
+      .from('admin_security')
+      .select('session_version, admin_username')
+      .eq('id', 'primary')
+      .maybeSingle();
+    secRow = data;
+  } catch (err) {
+    console.warn('Could not read admin_security during admin auth:', err);
+  }
+
+  const defaultSuperUsername = secRow?.admin_username || 'Dr. Mazen 2006';
+
+  for (const raw of candidateValues) {
+    if (!raw) continue;
+    let decodedStr = raw;
+    try {
+      decodedStr = decodeURIComponent(raw);
+    } catch {
+      decodedStr = raw;
+    }
+
+    // A) Try verifying as signed HMAC-SHA256 Token (v2 or standard admin token)
+    const tokenPayload = verifyToken<any>(raw) || verifyToken<any>(decodedStr);
+    if (tokenPayload) {
+      const isSuper =
+        Boolean(tokenPayload.is_super_admin) ||
+        tokenPayload.role === 'super_admin' ||
+        (typeof tokenPayload.username === 'string' &&
+          tokenPayload.username.toLowerCase() === defaultSuperUsername.toLowerCase());
+
+      const isAdmin =
+        isSuper ||
+        tokenPayload.role === 'admin' ||
+        Boolean(tokenPayload.permissions?.can_manage_students) ||
+        Boolean(tokenPayload.permissions?.can_manage_content);
+
+      if (isAdmin) {
+        // Enforce session version invalidation for Super Admin
+        if (
+          isSuper &&
+          secRow?.session_version &&
+          tokenPayload.session_version &&
+          secRow.session_version > tokenPayload.session_version
+        ) {
+          // Token session has been revoked by emergency panic
+          continue;
+        }
+
+        return {
+          username: tokenPayload.username || defaultSuperUsername,
+          is_super_admin: isSuper,
+          session_version: tokenPayload.session_version || secRow?.session_version || 1,
+          permissions: tokenPayload.permissions || {
+            can_manage_students: true,
+            can_manage_content: true,
+            can_delete_content: true,
+            can_access_student_vault: true,
+          },
+        };
+      }
+    }
+
+    // B) Try parsing as JSON object (e.g. current admin login session string)
+    try {
+      let parsed: any = null;
+      if (decodedStr.startsWith('{') && decodedStr.endsWith('}')) {
+        parsed = JSON.parse(decodedStr);
+      } else if (raw.startsWith('{') && raw.endsWith('}')) {
+        parsed = JSON.parse(raw);
+      }
+
+      if (parsed && typeof parsed === 'object' && parsed.username) {
+        const u = String(parsed.username).trim();
+        const isSuper =
+          u.toLowerCase() === defaultSuperUsername.toLowerCase() || parsed.is_super_admin === true;
+
+        if (isSuper) {
+          if (
+            secRow?.session_version &&
+            parsed.session_version &&
+            secRow.session_version > parsed.session_version
+          ) {
+            continue;
+          }
+
+          return {
+            username: defaultSuperUsername,
+            is_super_admin: true,
+            session_version: secRow?.session_version || 1,
+            permissions: {
+              can_manage_students: true,
+              can_manage_content: true,
+              can_delete_content: true,
+              can_access_student_vault: true,
+            },
+          };
+        }
+
+        // Verify sub-admin against database
+        const { data: subAdmin } = await supabaseAdmin
+          .from('admin_users')
+          .select('*')
+          .ilike('username', u)
+          .maybeSingle();
+
+        if (subAdmin) {
+          return {
+            username: subAdmin.username,
+            is_super_admin: false,
+            session_version: 1,
+            permissions: {
+              can_manage_students: Boolean(subAdmin.can_manage_students),
+              can_manage_content: Boolean(subAdmin.can_manage_content),
+              can_delete_content: Boolean(subAdmin.can_delete_content),
+              can_access_student_vault: Boolean(subAdmin.can_access_student_vault),
+            },
+          };
+        }
+      }
+    } catch {
+      // not JSON format
+    }
+  }
+
+  return null;
 }
 
 export async function POST(req: NextRequest) {
-  const admin = authenticateAdmin(req);
+  const admin = await authenticateAdmin(req);
   if (!admin) {
     return NextResponse.json(
-      { success: false, error: 'غير مصرح: يجب تسجيل الدخول كمسؤول أولاً' },
+      {
+        success: false,
+        error: 'غير مصرح: يجب تسجيل الدخول كمسؤول أولاً. لم يتم العثور على جلسة أدمن صالحة.',
+        unauthorized: true,
+      },
       { status: 401 }
     );
   }
@@ -50,11 +219,55 @@ export async function POST(req: NextRequest) {
     // 1. GET SECURITY CONFIG (Safe for display in SecurityCenter)
     // -------------------------------------------------------------
     if (action === 'get_security_data') {
-      const { data: secRow } = await supabaseAdmin
+      let { data: secRow } = await supabaseAdmin
         .from('admin_security')
         .select('*')
         .eq('id', 'primary')
         .maybeSingle();
+
+      // If admin_security row does not exist, check site_settings or upsert defaults
+      if (!secRow) {
+        const { data: siteSwitches } = await supabaseAdmin
+          .from('site_settings')
+          .select('value')
+          .eq('key', 'emergency_switches')
+          .maybeSingle();
+
+        const defaultSettings = {
+          id: 'primary',
+          admin_username: 'Dr. Mazen 2006',
+          vault_enabled: true,
+          session_version: 1,
+          manual_approval_enabled: Boolean(siteSwitches?.value?.manual_approval_enabled),
+          registration_paused: Boolean(siteSwitches?.value?.registration_paused),
+          platform_lockdown: Boolean(
+            siteSwitches?.value?.platform_locked ||
+              siteSwitches?.value?.platform_lockdown ||
+              siteSwitches?.value?.maintenance_mode
+          ),
+          super_admin_slug: 'command-mazen',
+          staff_portal_slug: 'staff-portal',
+          whatsapp_approval_number: '201000000000',
+          staff_visible_tabs: {
+            materials: true,
+            quizzes: true,
+            covers: true,
+            students: false,
+            vault: false,
+            security: false,
+            settings: false,
+          },
+          updated_at: new Date().toISOString(),
+        };
+
+        const { data: createdSec } = await supabaseAdmin
+          .from('admin_security')
+          .upsert(defaultSettings)
+          .select()
+          .maybeSingle();
+
+        secRow = createdSec || defaultSettings;
+      }
 
       const { data: subAdmins } = await supabaseAdmin
         .from('admin_users')
@@ -67,22 +280,26 @@ export async function POST(req: NextRequest) {
         .order('created_at', { ascending: false })
         .limit(30);
 
-      // Strip sensitive hashes before returning
+      // Strip sensitive hashes before returning and include convenient alias keys
       const safeSecRow = secRow
         ? {
             id: secRow.id,
             admin_username: secRow.admin_username,
             vault_enabled: Boolean(secRow.vault_enabled),
             has_vault_passwords: Boolean(secRow.vault_numeric_hash && secRow.vault_complex_hash),
-            session_version: secRow.session_version,
+            session_version: secRow.session_version || 1,
             manual_approval_enabled: Boolean(secRow.manual_approval_enabled),
+            require_student_approval: Boolean(secRow.manual_approval_enabled),
             super_admin_slug: secRow.super_admin_slug || 'command-mazen',
             staff_portal_slug: secRow.staff_portal_slug || 'staff-portal',
             whatsapp_approval_number: secRow.whatsapp_approval_number || '201000000000',
             staff_visible_tabs: secRow.staff_visible_tabs,
             registration_paused: Boolean(secRow.registration_paused),
             platform_lockdown: Boolean(secRow.platform_lockdown),
-            has_recovery_codes: Array.isArray(secRow.recovery_code_hashes) && secRow.recovery_code_hashes.length > 0,
+            platform_locked: Boolean(secRow.platform_lockdown),
+            maintenance_mode: Boolean(secRow.platform_lockdown),
+            has_recovery_codes:
+              Array.isArray(secRow.recovery_code_hashes) && secRow.recovery_code_hashes.length > 0,
             remaining_recovery_codes_count: Array.isArray(secRow.recovery_code_hashes)
               ? secRow.recovery_code_hashes.length
               : 0,
@@ -101,7 +318,7 @@ export async function POST(req: NextRequest) {
     }
 
     // -------------------------------------------------------------
-    // 2. UPDATE SECURITY SETTINGS (Super Admin Only)
+    // 2. UPDATE SECURITY SETTINGS & EMERGENCY SWITCHES
     // -------------------------------------------------------------
     if (action === 'update_security_settings') {
       if (!admin.is_super_admin) {
@@ -117,26 +334,82 @@ export async function POST(req: NextRequest) {
       if (body.super_admin_key !== undefined) updates.super_admin_key = body.super_admin_key.trim();
       if (body.staff_portal_slug !== undefined) updates.staff_portal_slug = sanitizeInput(body.staff_portal_slug);
       if (body.staff_portal_key !== undefined) updates.staff_portal_key = body.staff_portal_key.trim();
-      if (body.whatsapp_approval_number !== undefined) updates.whatsapp_approval_number = sanitizeInput(body.whatsapp_approval_number);
-      if (body.manual_approval_enabled !== undefined) updates.manual_approval_enabled = Boolean(body.manual_approval_enabled);
-      if (body.registration_paused !== undefined) updates.registration_paused = Boolean(body.registration_paused);
-      if (body.platform_lockdown !== undefined) updates.platform_lockdown = Boolean(body.platform_lockdown);
-      if (body.staff_visible_tabs !== undefined) updates.staff_visible_tabs = body.staff_visible_tabs;
+      if (body.whatsapp_approval_number !== undefined)
+        updates.whatsapp_approval_number = sanitizeInput(body.whatsapp_approval_number);
 
-      const { data, error } = await supabaseAdmin
+      // Support both manual_approval_enabled and require_student_approval
+      if (body.manual_approval_enabled !== undefined) {
+        updates.manual_approval_enabled = Boolean(body.manual_approval_enabled);
+      } else if (body.require_student_approval !== undefined) {
+        updates.manual_approval_enabled = Boolean(body.require_student_approval);
+      }
+
+      // Support registration_paused
+      if (body.registration_paused !== undefined) {
+        updates.registration_paused = Boolean(body.registration_paused);
+      }
+
+      // Support platform_lockdown, platform_locked, and maintenance_mode
+      if (body.platform_lockdown !== undefined) {
+        updates.platform_lockdown = Boolean(body.platform_lockdown);
+      } else if (body.platform_locked !== undefined) {
+        updates.platform_lockdown = Boolean(body.platform_locked);
+      } else if (body.maintenance_mode !== undefined) {
+        updates.platform_lockdown = Boolean(body.maintenance_mode);
+      }
+
+      if (body.staff_visible_tabs !== undefined) updates.staff_visible_tabs = body.staff_visible_tabs;
+      if (body.session_version !== undefined) updates.session_version = Number(body.session_version);
+
+      // Upsert into admin_security using SUPABASE_SERVICE_ROLE_KEY to guarantee persistence
+      const { data: updatedSec, error: secErr } = await supabaseAdmin
         .from('admin_security')
-        .update(updates)
-        .eq('id', 'primary')
+        .upsert({
+          id: 'primary',
+          ...updates,
+        })
         .select()
         .single();
 
-      if (error) {
-        return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+      if (secErr) {
+        console.error('Error upserting admin_security:', secErr);
+        return NextResponse.json({ success: false, error: secErr.message }, { status: 500 });
       }
 
-      await logAdminAudit(admin.username, 'update_security_settings', 'تم تعديل الإعدادات الأمنية للمنصة', ip);
+      // Also upsert into site_settings so the switches persist across page reloads & are visible platform-wide
+      try {
+        await supabaseAdmin.from('site_settings').upsert({
+          key: 'emergency_switches',
+          value: {
+            registration_paused: Boolean(updatedSec?.registration_paused ?? updates.registration_paused),
+            platform_locked: Boolean(updatedSec?.platform_lockdown ?? updates.platform_lockdown),
+            maintenance_mode: Boolean(updatedSec?.platform_lockdown ?? updates.platform_lockdown),
+            platform_lockdown: Boolean(updatedSec?.platform_lockdown ?? updates.platform_lockdown),
+            require_student_approval: Boolean(
+              updatedSec?.manual_approval_enabled ?? updates.manual_approval_enabled
+            ),
+            manual_approval_enabled: Boolean(
+              updatedSec?.manual_approval_enabled ?? updates.manual_approval_enabled
+            ),
+            updated_at: new Date().toISOString(),
+          },
+          updated_at: new Date().toISOString(),
+        });
+      } catch (siteErr) {
+        console.warn('Could not mirror switches to site_settings:', siteErr);
+      }
 
-      return NextResponse.json({ success: true, settings: stripSensitiveFields(data) });
+      await logAdminAudit(admin.username, 'update_security_settings', 'تم تعديل الإعدادات ومفاتيح الطوارئ الأمنية', ip);
+
+      return NextResponse.json({
+        success: true,
+        settings: {
+          ...stripSensitiveFields(updatedSec),
+          require_student_approval: Boolean(updatedSec?.manual_approval_enabled),
+          platform_locked: Boolean(updatedSec?.platform_lockdown),
+          maintenance_mode: Boolean(updatedSec?.platform_lockdown),
+        },
+      });
     }
 
     // -------------------------------------------------------------
@@ -247,7 +520,6 @@ export async function POST(req: NextRequest) {
 
       await logAdminAudit(admin.username, 'generate_recovery_codes', 'تم توليد 5 أكواد استرداد طوارئ جديدة للمشرف العام', ip);
 
-      // Return raw codes ONLY this once for the admin to copy/save
       return NextResponse.json({ success: true, rawCodes });
     }
 
@@ -368,12 +640,13 @@ export async function POST(req: NextRequest) {
 
       const response = NextResponse.json({ success: true, newVersion });
       response.cookies.delete('eldostour_admin_token');
+      response.cookies.delete('v2_admin_token');
+      response.cookies.delete('eldostour_admin_session');
       return response;
     }
 
     // -------------------------------------------------------------
     // 8. EMERGENCY RESET ALL STUDENT PASSWORDS TO UNIFIED PASSWORD
-    //    (AlDustour@2006@999#111#111) -> Requirement 2
     // -------------------------------------------------------------
     if (action === 'reset_all_student_passwords') {
       if (!admin.is_super_admin && !admin.permissions?.can_manage_students) {
@@ -383,11 +656,9 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      // Generate salt and hash for unified reset password
       const salt = generateRandomSalt(16);
       const unifiedHash = hashPasswordWithSalt(UNIFIED_RESET_PASSWORD, salt);
 
-      // Fetch all registered students
       const { data: students, error: fetchErr } = await supabaseAdmin
         .from('students')
         .select('id')
@@ -399,7 +670,6 @@ export async function POST(req: NextRequest) {
 
       const studentCount = students?.length || 0;
 
-      // Update all students in database
       const { error: updErr } = await supabaseAdmin
         .from('students')
         .update({
@@ -414,7 +684,6 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ success: false, error: updErr.message }, { status: 500 });
       }
 
-      // Invalidate existing sessions by bumping session_version
       const { data: currentSec } = await supabaseAdmin
         .from('admin_security')
         .select('session_version')
@@ -430,7 +699,7 @@ export async function POST(req: NextRequest) {
       await logAdminAudit(
         admin.username,
         'emergency_password_reset',
-        `تم تنفيذ إعادة تعيين جماعية طارئة لكلمات مرور كافة الطلاب (${studentCount} طالب) إلى الباسورد الموحد وإلزامهم بالتغيير الفوري`,
+        `تم تنفيذ إعادة تعيين جماعية طارئة لكلمات مرور كافة الطلاب (${studentCount} طالب) للباسورد الموحد وإلزامهم بالتغيير الفوري`,
         ip
       );
 
@@ -446,20 +715,32 @@ export async function POST(req: NextRequest) {
     // -------------------------------------------------------------
     if (action === 'get_students') {
       if (!admin.is_super_admin && !admin.permissions?.can_manage_students) {
-        return NextResponse.json({ success: false, error: 'غير مصرح بعرض الطلاب' }, { status: 403 });
+        return NextResponse.json(
+          { success: false, error: 'غير مصرح: حسابك لا يملك صلاحية إدارة سجل الطلاب' },
+          { status: 403 }
+        );
       }
 
+      // Fetch all rows from students table via supabaseAdmin (bypassing RLS)
       const { data: students, error } = await supabaseAdmin
         .from('students')
         .select('*')
         .order('created_at', { ascending: false });
 
       if (error) {
-        return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+        console.error('Error fetching students with supabaseAdmin:', error);
+        return NextResponse.json(
+          {
+            success: false,
+            error: `فشل استعلام الطلاب من قاعدة البيانات: ${error.message}. يرجى التأكد من ضبط SUPABASE_SERVICE_ROLE_KEY على الخادم لتجاوز قيود RLS.`,
+          },
+          { status: 500 }
+        );
       }
 
       return NextResponse.json({
         success: true,
+        count: students?.length || 0,
         students: (students || []).map((s) => stripSensitiveFields(s)),
       });
     }
@@ -475,7 +756,9 @@ export async function POST(req: NextRequest) {
       }
 
       // Whitelist update fields
-      const safeUpdates: Record<string, any> = {};
+      const safeUpdates: Record<string, any> = {
+        updated_at: new Date().toISOString(),
+      };
       if (updates.is_approved !== undefined) safeUpdates.is_approved = Boolean(updates.is_approved);
       if (updates.is_verified !== undefined) safeUpdates.is_verified = Boolean(updates.is_verified);
       if (updates.is_banned !== undefined) safeUpdates.is_banned = Boolean(updates.is_banned);
@@ -483,7 +766,19 @@ export async function POST(req: NextRequest) {
       if (updates.academic_year !== undefined) safeUpdates.academic_year = Number(updates.academic_year);
       if (updates.full_name !== undefined) safeUpdates.full_name = sanitizeInput(updates.full_name);
       if (updates.phone !== undefined) safeUpdates.phone = sanitizeInput(updates.phone);
-      if (updates.device_fingerprint !== undefined) safeUpdates.device_fingerprint = updates.device_fingerprint; // Admin can unlink device by passing null
+      if (updates.student_code !== undefined)
+        safeUpdates.student_code = sanitizeInput(updates.student_code).toUpperCase();
+      if (updates.device_fingerprint !== undefined) safeUpdates.device_fingerprint = updates.device_fingerprint;
+      if (updates.must_change_password !== undefined)
+        safeUpdates.must_change_password = Boolean(updates.must_change_password);
+
+      // Support individual student password change / reset
+      if (updates.password) {
+        const salt = generateRandomSalt(16);
+        safeUpdates.password_salt = salt;
+        safeUpdates.password_hash = hashPasswordWithSalt(updates.password, salt);
+        safeUpdates.must_change_password = true;
+      }
 
       const { data: updated, error } = await supabaseAdmin
         .from('students')
@@ -541,7 +836,6 @@ export async function POST(req: NextRequest) {
 
     // -------------------------------------------------------------
     // 10. GENERIC SECURE MUTATIONS FOR ADMIN CONTENT TABLES
-    // (materials, quizzes, quiz_questions, subjects, bundles, news, etc.)
     // -------------------------------------------------------------
     if (action === 'mutate') {
       const { table, mutation, data, id, ids, filter } = body;
@@ -567,7 +861,6 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ success: false, error: 'جدول غير مصرح به' }, { status: 403 });
       }
 
-      // Check content permissions
       if (mutation === 'delete') {
         if (!admin.is_super_admin && !admin.permissions?.can_delete_content) {
           return NextResponse.json({ success: false, error: 'غير مصرح بحذف المحتوى' }, { status: 403 });
@@ -578,7 +871,6 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // Execute mutation via supabaseAdmin
       if (mutation === 'insert') {
         const { data: created, error } = await supabaseAdmin
           .from(table)

@@ -142,7 +142,7 @@ export function SecurityCenterManager({ onRefresh }: SecurityCenterManagerProps)
     setIsLoading(true);
     try {
       const secRes = await adminGetSecurityData();
-      if (secRes?.securitySettings) {
+      if (secRes?.success && secRes?.securitySettings) {
         const s = secRes.securitySettings as AdminSecuritySettings;
         setSecuritySettings(s);
         setNewSuperUsername(s.admin_username || '');
@@ -151,6 +151,8 @@ export function SecurityCenterManager({ onRefresh }: SecurityCenterManagerProps)
         setSuperAdminKey(s.super_admin_key || 'dustour2006');
         setStaffPortalSlug(s.staff_portal_slug || 'staff-portal');
         setStaffPortalKey(s.staff_portal_key || 'team2026');
+      } else if (secRes?.error) {
+        setErrorMsg(secRes.error);
       }
       if (secRes?.subAdmins) {
         setSubAdmins(secRes.subAdmins as SubAdminUser[]);
@@ -158,8 +160,9 @@ export function SecurityCenterManager({ onRefresh }: SecurityCenterManagerProps)
       if (secRes?.logs) {
         setLogs(secRes.logs as AdminSecurityLog[]);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.warn('Could not load security center data:', err);
+      setErrorMsg(err?.message || 'فشل الاتصال بمركز الأمان');
     } finally {
       setIsLoading(false);
       onRefreshRef.current?.();
@@ -194,50 +197,139 @@ export function SecurityCenterManager({ onRefresh }: SecurityCenterManagerProps)
 
   // Toggle Manual Student Approval
   const handleToggleManualApproval = async () => {
-    if (!securitySettings) return;
-    const nextVal = !securitySettings.manual_approval_enabled;
-    try {
-      await adminUpdateSecuritySettings({ manual_approval_enabled: nextVal });
-      setSecuritySettings((prev) => (prev ? { ...prev, manual_approval_enabled: nextVal } : null));
+    const currentVal = Boolean(
+      securitySettings?.manual_approval_enabled || securitySettings?.require_student_approval
+    );
+    const nextVal = !currentVal;
 
-      setSuccessMsg(`تم ${nextVal ? 'تفعيل' : 'تعطيل'} الاعتماد اليدوي للطلاب بنجاح!`);
+    // Optimistic UI update
+    setSecuritySettings((prev) =>
+      prev
+        ? { ...prev, manual_approval_enabled: nextVal, require_student_approval: nextVal }
+        : ({
+            id: 'primary',
+            admin_username: 'Dr. Mazen 2006',
+            vault_enabled: true,
+            session_version: 1,
+            manual_approval_enabled: nextVal,
+            require_student_approval: nextVal,
+            registration_paused: false,
+            platform_lockdown: false,
+          } as any)
+    );
+
+    try {
+      const res = await adminUpdateSecuritySettings({
+        manual_approval_enabled: nextVal,
+        require_student_approval: nextVal,
+      });
+
+      if (!res?.success) throw new Error(res?.error || 'فشل تحديث إعداد مراجعة واعتماد الطلاب');
+
+      setSuccessMsg(
+        `تم ${nextVal ? 'تفعيل نظام مراجعة واعتماد الطلاب ⏳' : 'تفعيل التسجيل المباشر التلقائي ✅'} بنجاح!`
+      );
       setTimeout(() => setSuccessMsg(''), 4000);
-    } catch {
-      setErrorMsg('فشل تحديث إعداد الاعتماد اليدوي');
+    } catch (err: any) {
+      setSecuritySettings((prev) =>
+        prev ? { ...prev, manual_approval_enabled: currentVal, require_student_approval: currentVal } : null
+      );
+      setErrorMsg(err?.message || 'فشل تحديث إعداد مراجعة واعتماد الطلاب');
     }
   };
 
   // Toggle Registration Paused
   const handleToggleRegistrationPaused = async () => {
-    if (!securitySettings) return;
-    const nextVal = !securitySettings.registration_paused;
-    try {
-      await adminUpdateSecuritySettings({ registration_paused: nextVal });
-      setSecuritySettings((prev) => (prev ? { ...prev, registration_paused: nextVal } : null));
+    const currentVal = Boolean(securitySettings?.registration_paused);
+    const nextVal = !currentVal;
 
-      setSuccessMsg(`تم ${nextVal ? 'إيقاف التسجيل مؤقتاً' : 'فتح التسجيل للطلاب'} بنجاح!`);
+    // Optimistic UI update
+    setSecuritySettings((prev) =>
+      prev
+        ? { ...prev, registration_paused: nextVal }
+        : ({
+            id: 'primary',
+            admin_username: 'Dr. Mazen 2006',
+            vault_enabled: true,
+            session_version: 1,
+            manual_approval_enabled: false,
+            registration_paused: nextVal,
+            platform_lockdown: false,
+          } as any)
+    );
+
+    try {
+      const res = await adminUpdateSecuritySettings({ registration_paused: nextVal });
+      if (!res?.success) throw new Error(res?.error || 'فشل تحديث حالة التسجيل');
+
+      setSuccessMsg(`تم ${nextVal ? 'إيقاف التسجيل مؤقتاً ⏸️' : 'فتح التسجيل للطلاب ✅'} بنجاح!`);
       setTimeout(() => setSuccessMsg(''), 4000);
-    } catch {
-      setErrorMsg('فشل تحديث حالة التسجيل');
+    } catch (err: any) {
+      setSecuritySettings((prev) => (prev ? { ...prev, registration_paused: currentVal } : null));
+      setErrorMsg(err?.message || 'فشل تحديث حالة التسجيل');
     }
   };
 
-  // Toggle Platform Lockdown
+  // Toggle Platform Lockdown / Maintenance Mode
   const handleTogglePlatformLockdown = async () => {
-    if (!securitySettings) return;
-    const nextVal = !securitySettings.platform_lockdown;
+    const currentVal = Boolean(
+      securitySettings?.platform_lockdown ||
+        securitySettings?.platform_locked ||
+        securitySettings?.maintenance_mode
+    );
+    const nextVal = !currentVal;
     if (nextVal) {
-      const confirmLock = confirm('هل أنت متأكد من تفعيل وضع القفل الشامل للمنصة؟ سيتم منع الطلاب من الوصول للدروس.');
+      const confirmLock = confirm(
+        'هل أنت متأكد من تفعيل وضع قفل المنصة الشامل (صيانة طارئة)؟ سيتم منع الطلاب والزوار من الوصول للدروس.'
+      );
       if (!confirmLock) return;
     }
-    try {
-      await adminUpdateSecuritySettings({ platform_lockdown: nextVal });
-      setSecuritySettings((prev) => (prev ? { ...prev, platform_lockdown: nextVal } : null));
 
-      setSuccessMsg(`تم ${nextVal ? 'تفعيل قفل المنصة الشامل ⚠️' : 'إلغاء قفل المنصة'} بنجاح!`);
+    // Optimistic UI update
+    setSecuritySettings((prev) =>
+      prev
+        ? {
+            ...prev,
+            platform_lockdown: nextVal,
+            platform_locked: nextVal,
+            maintenance_mode: nextVal,
+          }
+        : ({
+            id: 'primary',
+            admin_username: 'Dr. Mazen 2006',
+            vault_enabled: true,
+            session_version: 1,
+            manual_approval_enabled: false,
+            registration_paused: false,
+            platform_lockdown: nextVal,
+            platform_locked: nextVal,
+            maintenance_mode: nextVal,
+          } as any)
+    );
+
+    try {
+      const res = await adminUpdateSecuritySettings({
+        platform_lockdown: nextVal,
+        platform_locked: nextVal,
+        maintenance_mode: nextVal,
+      });
+
+      if (!res?.success) throw new Error(res?.error || 'فشل تحديث وضع القفل');
+
+      setSuccessMsg(`تم ${nextVal ? 'تفعيل قفل المنصة الشامل 🔒' : 'إلغاء قفل المنصة وإعادتها للعمل 🟢'} بنجاح!`);
       setTimeout(() => setSuccessMsg(''), 4000);
-    } catch {
-      setErrorMsg('فشل تحديث وضع القفل');
+    } catch (err: any) {
+      setSecuritySettings((prev) =>
+        prev
+          ? {
+              ...prev,
+              platform_lockdown: currentVal,
+              platform_locked: currentVal,
+              maintenance_mode: currentVal,
+            }
+          : null
+      );
+      setErrorMsg(err?.message || 'فشل تحديث وضع القفل');
     }
   };
 
@@ -568,11 +660,11 @@ export function SecurityCenterManager({ onRefresh }: SecurityCenterManagerProps)
           </span>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-1">
           {/* Switch 1: Pause Registration */}
           <div className="p-3.5 rounded-2xl bg-slate-950/60 border border-slate-800 flex items-center justify-between">
             <div>
-              <span className="block text-xs font-bold text-white mb-0.5">إيقاف التسجيل مؤقتاً</span>
+              <span className="block text-xs font-bold text-white mb-0.5">إيقاف التسجيل المؤقت</span>
               <span className="text-[10px] text-slate-400">منع حسابات جديدة</span>
             </div>
             <button
@@ -600,18 +692,22 @@ export function SecurityCenterManager({ onRefresh }: SecurityCenterManagerProps)
           {/* Switch 2: Platform Lockdown */}
           <div className="p-3.5 rounded-2xl bg-slate-950/60 border border-slate-800 flex items-center justify-between">
             <div>
-              <span className="block text-xs font-bold text-white mb-0.5">وضع قفل المنصة الشامل</span>
+              <span className="block text-xs font-bold text-white mb-0.5">وضع قفل المنصة</span>
               <span className="text-[10px] text-slate-400">قفل المحاضرات للطوارئ</span>
             </div>
             <button
               onClick={handleTogglePlatformLockdown}
               className={`p-1.5 rounded-xl border text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                securitySettings?.platform_lockdown
+                securitySettings?.platform_lockdown ||
+                securitySettings?.platform_locked ||
+                securitySettings?.maintenance_mode
                   ? 'bg-red-600/20 border-red-500/50 text-red-400'
                   : 'bg-slate-800 border-slate-700 text-slate-400'
               }`}
             >
-              {securitySettings?.platform_lockdown ? (
+              {securitySettings?.platform_lockdown ||
+              securitySettings?.platform_locked ||
+              securitySettings?.maintenance_mode ? (
                 <>
                   <ToggleRight className="w-5 h-5 text-red-400" />
                   <span>مُقفل 🔒</span>
@@ -625,7 +721,35 @@ export function SecurityCenterManager({ onRefresh }: SecurityCenterManagerProps)
             </button>
           </div>
 
-          {/* Switch 3: Central Panic Terminate */}
+          {/* Switch 3: Manual Student Approval */}
+          <div className="p-3.5 rounded-2xl bg-slate-950/60 border border-slate-800 flex items-center justify-between">
+            <div>
+              <span className="block text-xs font-bold text-white mb-0.5">نظام مراجعة واعتماد الطلاب</span>
+              <span className="text-[10px] text-slate-400">مراجعة يدوية للطلبة الجدد</span>
+            </div>
+            <button
+              onClick={handleToggleManualApproval}
+              className={`p-1.5 rounded-xl border text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                securitySettings?.manual_approval_enabled || securitySettings?.require_student_approval
+                  ? 'bg-amber-500/20 border-amber-500/40 text-amber-400'
+                  : 'bg-slate-800 border-slate-700 text-slate-400'
+              }`}
+            >
+              {securitySettings?.manual_approval_enabled || securitySettings?.require_student_approval ? (
+                <>
+                  <ToggleRight className="w-5 h-5 text-amber-400" />
+                  <span>يدوي ⏳</span>
+                </>
+              ) : (
+                <>
+                  <ToggleLeft className="w-5 h-5 text-slate-500" />
+                  <span>تلقائي 🟢</span>
+                </>
+              )}
+            </button>
+          </div>
+
+          {/* Switch 4: Central Panic Terminate */}
           <div className="p-3.5 rounded-2xl bg-slate-950/60 border border-slate-800 flex items-center justify-between">
             <div>
               <span className="block text-xs font-bold text-white mb-0.5">إغلاق الطوارئ المركزي</span>
@@ -639,8 +763,8 @@ export function SecurityCenterManager({ onRefresh }: SecurityCenterManagerProps)
             </button>
           </div>
 
-          {/* Switch 4: Emergency Reset All Student Passwords */}
-          <div className="p-3.5 rounded-2xl bg-amber-950/20 border border-amber-500/40 flex items-center justify-between col-span-1 sm:col-span-2 lg:col-span-3">
+          {/* Switch 5: Emergency Reset All Student Passwords */}
+          <div className="p-3.5 rounded-2xl bg-amber-950/20 border border-amber-500/40 flex items-center justify-between col-span-1 sm:col-span-2 lg:col-span-4">
             <div>
               <div className="flex items-center gap-2 mb-0.5">
                 <span className="text-xs font-black text-amber-400">إعادة تعيين جماعية لكلمات مرور الطلاب</span>

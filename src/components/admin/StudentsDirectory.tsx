@@ -62,6 +62,7 @@ export function StudentsDirectory({ adminSession }: StudentsDirectoryProps) {
   const [students, setStudents] = useState<Student[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedYear, setSelectedYear] = useState<AcademicYearId | 0>(0);
   const [selectedGender, setSelectedGender] = useState<StudentGender | 'all'>('all');
@@ -136,13 +137,20 @@ export function StudentsDirectory({ adminSession }: StudentsDirectoryProps) {
   // Fetch Students safely via server API
   const fetchStudents = useCallback(async (manual = false) => {
     if (manual) setIsRefreshing(true);
+    setErrorMsg('');
     try {
       const res = await adminGetStudents();
-      if (res?.students) {
+      if (res?.success && Array.isArray(res?.students)) {
         setStudents(res.students as Student[]);
+      } else {
+        const error =
+          res?.error || 'فشل تحميل بيانات الطلاب من الخادم. يرجى التأكد من تسجيل الدخول كمسؤول.';
+        console.error('Failed to load students:', error);
+        setErrorMsg(error);
       }
-    } catch (err) {
-      console.warn('Failed to load students:', err);
+    } catch (err: any) {
+      console.error('Failed to load students exception:', err);
+      setErrorMsg(err?.message || 'خطأ في الاتصال بالخادم الأمني');
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
@@ -737,6 +745,30 @@ export function StudentsDirectory({ adminSession }: StudentsDirectoryProps) {
         </div>
       </div>
 
+      {/* Error Alert Banner if fetching failed */}
+      {errorMsg && (
+        <div className="p-4 rounded-2xl bg-rose-500/15 border border-rose-500/40 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-lg">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-rose-500/20 text-rose-400 flex items-center justify-center shrink-0">
+              <AlertTriangle className="w-5 h-5 text-rose-400" />
+            </div>
+            <div>
+              <p className="text-xs font-bold text-rose-200">{errorMsg}</p>
+              <p className="text-[11px] text-rose-400/80 mt-0.5">
+                تأكد من تسجيل الدخول كمسؤول وربط صلاحيات SUPABASE_SERVICE_ROLE_KEY لتجاوز سياسات الأمان RLS.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => fetchStudents(true)}
+            className="px-3.5 py-1.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 cursor-pointer border border-rose-500/30"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+            <span>إعادة المحاولة</span>
+          </button>
+        </div>
+      )}
+
       {/* Stats Summary Grid */}
       <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
         <div className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800 text-center">
@@ -1003,11 +1035,30 @@ export function StudentsDirectory({ adminSession }: StudentsDirectoryProps) {
             </div>
           ) : filteredStudents.length === 0 ? (
             <div className="p-12 text-center text-slate-400">
-              <Users className="w-10 h-10 mx-auto mb-3 text-slate-600" />
-              <p className="text-sm font-bold text-slate-300">لم يتم العثور على أي طلاب مطابقين</p>
-              <p className="text-xs text-slate-500 mt-1">
-                جرب تغيير معايير البحث أو تصفية الفرق الدراسية
-              </p>
+              {errorMsg ? (
+                <>
+                  <AlertTriangle className="w-10 h-10 mx-auto mb-3 text-rose-500" />
+                  <p className="text-sm font-bold text-rose-300">{errorMsg}</p>
+                  <p className="text-xs text-rose-400/80 mt-1">
+                    تأكد من تسجيل الدخول كمسؤول وضبط مفتاح SUPABASE_SERVICE_ROLE_KEY على الخادم لتجاوز قيود RLS.
+                  </p>
+                  <button
+                    onClick={() => fetchStudents(true)}
+                    className="mt-4 px-4 py-2 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 text-xs font-bold transition-all inline-flex items-center gap-2 cursor-pointer border border-rose-500/30"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>إعادة المحاولة الآن</span>
+                  </button>
+                </>
+              ) : (
+                <>
+                  <Users className="w-10 h-10 mx-auto mb-3 text-slate-600" />
+                  <p className="text-sm font-bold text-slate-300">لم يتم العثور على أي طلاب مطابقين</p>
+                  <p className="text-xs text-slate-500 mt-1">
+                    جرب تغيير معايير البحث أو تصفية الفرق الدراسية
+                  </p>
+                </>
+              )}
             </div>
           ) : (
             <div className="overflow-x-auto">

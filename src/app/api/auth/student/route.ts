@@ -21,6 +21,57 @@ import {
   generateGuestCode,
 } from '@/lib/authUtils';
 
+async function getEmergencySwitches() {
+  try {
+    const { data: secRow } = await supabaseAdmin
+      .from('admin_security')
+      .select('registration_paused, platform_lockdown, manual_approval_enabled, whatsapp_approval_number')
+      .eq('id', 'primary')
+      .maybeSingle();
+
+    if (secRow) {
+      return {
+        registration_paused: Boolean(secRow.registration_paused),
+        platform_locked: Boolean(secRow.platform_lockdown),
+        maintenance_mode: Boolean(secRow.platform_lockdown),
+        manual_approval_enabled: Boolean(secRow.manual_approval_enabled),
+        require_student_approval: Boolean(secRow.manual_approval_enabled),
+        whatsapp_approval_number: secRow.whatsapp_approval_number || '201000000000',
+      };
+    }
+  } catch (err) {
+    console.warn('Could not read admin_security for emergency switches:', err);
+  }
+
+  // Fallback to site_settings
+  try {
+    const { data: siteSwitches } = await supabaseAdmin
+      .from('site_settings')
+      .select('value')
+      .eq('key', 'emergency_switches')
+      .maybeSingle();
+
+    const val = siteSwitches?.value || {};
+    return {
+      registration_paused: Boolean(val.registration_paused),
+      platform_locked: Boolean(val.platform_locked || val.maintenance_mode || val.platform_lockdown),
+      maintenance_mode: Boolean(val.platform_locked || val.maintenance_mode || val.platform_lockdown),
+      manual_approval_enabled: Boolean(val.manual_approval_enabled || val.require_student_approval),
+      require_student_approval: Boolean(val.manual_approval_enabled || val.require_student_approval),
+      whatsapp_approval_number: '201000000000',
+    };
+  } catch {
+    return {
+      registration_paused: false,
+      platform_locked: false,
+      maintenance_mode: false,
+      manual_approval_enabled: false,
+      require_student_approval: false,
+      whatsapp_approval_number: '201000000000',
+    };
+  }
+}
+
 export async function POST(req: NextRequest) {
   const ip = getClientIp(req);
   const rateLimit = checkRateLimit(ip, 8, 60);
@@ -46,6 +97,19 @@ export async function POST(req: NextRequest) {
     // ACTION: LOGIN
     // -------------------------------------------------------------
     if (action === 'login') {
+      const switches = await getEmergencySwitches();
+      if (switches.platform_locked) {
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              'المنصة في وضع القفل الشامل والصيانة الطارئة حالياً بقرار من إدارة المنصة. يرجى المحاولة لاحقاً 🔒',
+            isMaintenance: true,
+          },
+          { status: 503 }
+        );
+      }
+
       const email = sanitizeInput(body.email || '').toLowerCase();
       const password = body.password || '';
       const deviceFingerprint = body.deviceFingerprint || '';
@@ -218,19 +282,26 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // Check registration paused switch in admin_security
-      const { data: secRow } = await supabaseAdmin
-        .from('admin_security')
-        .select('registration_paused, manual_approval_enabled')
-        .eq('id', 'primary')
-        .maybeSingle();
+      // Check emergency switches
+      const switches = await getEmergencySwitches();
 
-      if (secRow?.registration_paused) {
+      if (switches.platform_locked) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'عذراً، المنصة في وضع القفل الشامل والصيانة حالياً، التسجيل غير متاح 🔒',
+            isMaintenance: true,
+          },
+          { status: 503 }
+        );
+      }
+
+      if (switches.registration_paused) {
         return NextResponse.json(
           {
             success: false,
             error:
-              'عذراً، التسجيل متوقف مؤقتاً بقرار من إدارة المنصة لإجراء صيانة أمنية. يرجى المحاولة لاحقاً.',
+              'عذراً، التسجيل متوقف مؤقتاً بقرار من إدارة المنصة لإجراء صيانة أمنية. يرجى المحاولة لاحقاً ⏸️',
           },
           { status: 403 }
         );
@@ -269,7 +340,7 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      const isManualApproval = secRow?.manual_approval_enabled === true;
+      const isManualApproval = switches.manual_approval_enabled === true;
       const isApproved = !isManualApproval;
 
       // Count students for sequential code
@@ -340,6 +411,29 @@ export async function POST(req: NextRequest) {
     // ACTION: REGISTER GUEST
     // -------------------------------------------------------------
     if (action === 'guest') {
+      const switches = await getEmergencySwitches();
+
+      if (switches.platform_locked) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'عذراً، المنصة في وضع القفل الشامل والصيانة حالياً 🔒',
+            isMaintenance: true,
+          },
+          { status: 503 }
+        );
+      }
+
+      if (switches.registration_paused) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'عذراً، التسجيل كزائر متوقف مؤقتاً بقرار من إدارة المنصة ⏸️',
+          },
+          { status: 403 }
+        );
+      }
+
       const fullName = sanitizeInput(body.full_name || '');
       const phone = sanitizeInput(body.phone || '');
       const gender = body.gender || 'male';
@@ -553,18 +647,31 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const type = searchParams.get('type') || 'session';
 
-  if (type === 'config') {
-    // Return only safe public configuration values
-    const { data: secRow } = await supabaseAdmin
-      .from('admin_security')
-      .select('whatsapp_approval_number, registration_paused')
-      .eq('id', 'primary')
-      .maybeSingle();
+  const switches = await getEmergencySwitches();
 
+  if (type === 'config') {
+    // Return safe public configuration values
     return NextResponse.json({
-      whatsapp_approval_number: secRow?.whatsapp_approval_number || '201000000000',
-      registration_paused: secRow?.registration_paused || false,
+      whatsapp_approval_number: switches.whatsapp_approval_number,
+      registration_paused: switches.registration_paused,
+      platform_locked: switches.platform_locked,
+      platform_lockdown: switches.platform_locked,
+      maintenance_mode: switches.maintenance_mode,
+      require_student_approval: switches.require_student_approval,
+      manual_approval_enabled: switches.manual_approval_enabled,
     });
+  }
+
+  // If platform is locked, student sessions are paused
+  if (switches.platform_locked) {
+    return NextResponse.json(
+      {
+        authenticated: false,
+        isMaintenance: true,
+        error: 'المنصة في وضع القفل الشامل والصيانة الطارئة حالياً 🔒',
+      },
+      { status: 503 }
+    );
   }
 
   // Session check via HttpOnly Cookie

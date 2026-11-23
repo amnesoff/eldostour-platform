@@ -69,6 +69,7 @@ export interface AdminSecuritySettings {
   vault_complex_hash?: string;
   session_version: number;
   manual_approval_enabled: boolean;
+  require_student_approval?: boolean;
   super_admin_slug?: string;
   super_admin_key?: string;
   staff_portal_slug?: string;
@@ -78,6 +79,8 @@ export interface AdminSecuritySettings {
   recovery_code_hashes?: string[];
   registration_paused?: boolean;
   platform_lockdown?: boolean;
+  platform_locked?: boolean;
+  maintenance_mode?: boolean;
   updated_at?: string;
 }
 

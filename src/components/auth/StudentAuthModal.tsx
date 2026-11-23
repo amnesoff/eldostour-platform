@@ -64,19 +64,29 @@ export function StudentAuthModal() {
   const [regStep, setRegStep] = useState<'form' | 'pending_approval'>('form');
   const [registeredCode, setRegisteredCode] = useState('');
   const [approvalWhatsApp, setApprovalWhatsApp] = useState('201000000000');
+  const [isRegistrationPaused, setIsRegistrationPaused] = useState(false);
+  const [isPlatformLocked, setIsPlatformLocked] = useState(false);
 
   // Legal Terms & Contract Modal
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [isContractOpen, setIsContractOpen] = useState(false);
 
-  // Fetch dynamic whatsapp approval number safely from server config
+  // Fetch dynamic whatsapp approval number and emergency switches safely from server config
   useEffect(() => {
-    studentFetchPublicConfig().then((cfg) => {
-      if (cfg?.whatsapp_approval_number) {
-        setApprovalWhatsApp(cfg.whatsapp_approval_number);
-      }
-    }).catch(() => {});
-  }, []);
+    studentFetchPublicConfig()
+      .then((cfg) => {
+        if (cfg?.whatsapp_approval_number) {
+          setApprovalWhatsApp(cfg.whatsapp_approval_number);
+        }
+        if (cfg?.registration_paused) {
+          setIsRegistrationPaused(true);
+        }
+        if (cfg?.platform_locked || cfg?.maintenance_mode) {
+          setIsPlatformLocked(true);
+        }
+      })
+      .catch(() => {});
+  }, [isAuthModalOpen]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -419,6 +429,28 @@ export function StudentAuthModal() {
                 </div>
               )}
 
+              {/* Notice for Paused Registration */}
+              {isRegistrationPaused && (mode === 'register' || mode === 'guest') && (
+                <div className="mb-3 p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs leading-relaxed flex items-start justify-between gap-2 shrink-0">
+                  <div className="flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-400" />
+                    <span>
+                      التسجيل متوقف مؤقتاً بقرار من إدارة المنصة لإجراء صيانة دورية. إذا كان لديك حساب بالفعل، يرجى تسجيل الدخول.
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMode('login');
+                      setError('');
+                    }}
+                    className="px-2.5 py-1 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 font-bold text-[11px] shrink-0 cursor-pointer"
+                  >
+                    تسجيل الدخول
+                  </button>
+                </div>
+              )}
+
               {/* Form Area */}
               <form onSubmit={handleSubmit} className="space-y-3 overflow-y-auto pr-1 pb-1">
                 {/* FULL NAME (in register & guest mode) */}
@@ -700,11 +732,19 @@ export function StudentAuthModal() {
                 <div className="pt-2">
                   <button
                     type="submit"
-                    disabled={isSubmitting}
+                    disabled={
+                      isSubmitting ||
+                      (isRegistrationPaused && (mode === 'register' || mode === 'guest')) ||
+                      (isPlatformLocked && mode === 'login')
+                    }
                     className="w-full h-11 rounded-2xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black text-xs sm:text-sm shadow-lg shadow-amber-500/20 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer"
                   >
                     {isSubmitting ? (
                       <Loader2 className="w-5 h-5 animate-spin" />
+                    ) : isPlatformLocked ? (
+                      <span>المنصة في وضع الصيانة 🔒</span>
+                    ) : isRegistrationPaused && (mode === 'register' || mode === 'guest') ? (
+                      <span>التسجيل مُعلّق مؤقتاً ⏸️</span>
                     ) : mode === 'register' ? (
                       <>
                         <Sparkles className="w-4 h-4" />

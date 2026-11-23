@@ -11,49 +11,71 @@ import { Student, RegisterStudentData, GuestStudentData, AdminSession } from '@/
 // ADMIN API CALLS (/api/admin/auth & /api/admin/db)
 // -----------------------------------------------------------------
 
+/**
+ * Robust Admin Fetch Helper
+ * Always attaches credentials: 'include' for cookies (v2 and current session)
+ * and attaches sessionStorage headers (x-admin-session, authorization) if present.
+ */
+async function adminFetch(endpoint: string, options: RequestInit = {}) {
+  const headers = new Headers(options.headers || {});
+  if (!headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json');
+  }
+
+  if (typeof window !== 'undefined') {
+    const sessionStr = sessionStorage.getItem('eldostour_admin_session');
+    if (sessionStr) {
+      headers.set('x-admin-session', encodeURIComponent(sessionStr));
+    }
+    const token = sessionStorage.getItem('eldostour_admin_token');
+    if (token) {
+      headers.set('authorization', `Bearer ${token}`);
+    }
+  }
+
+  const res = await fetch(endpoint, {
+    ...options,
+    headers,
+    credentials: 'include',
+  });
+
+  return res.json();
+}
+
 export async function adminLoginCredentials(
   username: string,
   password: string,
   gateType: 'super_admin' | 'staff' = 'super_admin'
 ) {
-  const res = await fetch('/api/admin/auth', {
+  return adminFetch('/api/admin/auth', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action: 'credentials', username, password, gateType }),
   });
-  return res.json();
 }
 
 export async function adminVerifyPin(username: string, pin: string, isSuperAdmin: boolean) {
-  const res = await fetch('/api/admin/auth', {
+  return adminFetch('/api/admin/auth', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action: 'verify_pin', username, pin, is_super_admin: isSuperAdmin }),
   });
-  return res.json();
 }
 
 export async function adminRecoveryLogin(username: string, recoveryCode: string) {
-  const res = await fetch('/api/admin/auth', {
+  return adminFetch('/api/admin/auth', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action: 'recovery', username, recoveryCode }),
   });
-  return res.json();
 }
 
 export async function adminCheckSession() {
-  const res = await fetch('/api/admin/auth', { method: 'GET' });
-  return res.json();
+  return adminFetch('/api/admin/auth', { method: 'GET' });
 }
 
 export async function adminLogout() {
-  const res = await fetch('/api/admin/auth', {
+  return adminFetch('/api/admin/auth', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action: 'logout' }),
   });
-  return res.json();
 }
 
 export async function adminDbMutate(params: {
@@ -64,39 +86,31 @@ export async function adminDbMutate(params: {
   ids?: (string | number)[];
   filter?: Record<string, any>;
 }) {
-  const res = await fetch('/api/admin/db', {
+  return adminFetch('/api/admin/db', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action: 'mutate', ...params }),
   });
-  return res.json();
 }
 
 export async function adminGetSecurityData() {
-  const res = await fetch('/api/admin/db', {
+  return adminFetch('/api/admin/db', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action: 'get_security_data' }),
   });
-  return res.json();
 }
 
 export async function adminUpdateSecuritySettings(settings: Record<string, any>) {
-  const res = await fetch('/api/admin/db', {
+  return adminFetch('/api/admin/db', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action: 'update_security_settings', ...settings }),
   });
-  return res.json();
 }
 
 export async function adminChangeSuperCredentials(newPassword?: string, newPin?: string) {
-  const res = await fetch('/api/admin/db', {
+  return adminFetch('/api/admin/db', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action: 'change_super_credentials', newPassword, newPin }),
   });
-  return res.json();
 }
 
 export async function adminUpdateVault(vaultSettings: {
@@ -104,93 +118,73 @@ export async function adminUpdateVault(vaultSettings: {
   numeric_password?: string;
   complex_password?: string;
 }) {
-  const res = await fetch('/api/admin/db', {
+  return adminFetch('/api/admin/db', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action: 'update_vault', ...vaultSettings }),
   });
-  return res.json();
 }
 
 export async function adminUnlockVault(numericPassword?: string, complexPassword?: string) {
-  const res = await fetch('/api/admin/db', {
+  return adminFetch('/api/admin/db', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action: 'unlock_vault', numericPassword, complexPassword }),
   });
-  return res.json();
 }
 
 export async function adminGenerateRecoveryCodes() {
-  const res = await fetch('/api/admin/db', {
+  return adminFetch('/api/admin/db', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action: 'generate_recovery_codes' }),
   });
-  return res.json();
 }
 
 export async function adminManageSubAdmin(subAction: 'create' | 'update' | 'delete', data: any) {
-  const res = await fetch('/api/admin/db', {
+  return adminFetch('/api/admin/db', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action: 'manage_sub_admin', subAction, ...data }),
   });
-  return res.json();
 }
 
 export async function adminPanicRevoke() {
-  const res = await fetch('/api/admin/db', {
+  return adminFetch('/api/admin/db', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action: 'panic_revoke' }),
   });
-  return res.json();
 }
 
 export async function adminResetAllStudentPasswords() {
-  const res = await fetch('/api/admin/db', {
+  return adminFetch('/api/admin/db', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action: 'reset_all_student_passwords' }),
   });
-  return res.json();
 }
 
 export async function adminGetStudents() {
-  const res = await fetch('/api/admin/db', {
+  return adminFetch('/api/admin/db', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action: 'get_students' }),
   });
-  return res.json();
 }
 
 export async function adminUpdateStudent(studentId: string, updates: Record<string, any>) {
-  const res = await fetch('/api/admin/db', {
+  return adminFetch('/api/admin/db', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action: 'update_student', studentId, updates }),
   });
-  return res.json();
 }
 
 export async function adminBulkApproveStudents(studentIds: string[]) {
-  const res = await fetch('/api/admin/db', {
+  return adminFetch('/api/admin/db', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action: 'bulk_approve_students', studentIds }),
   });
-  return res.json();
 }
 
 export async function adminDeleteStudent(studentId: string) {
-  const res = await fetch('/api/admin/db', {
+  return adminFetch('/api/admin/db', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action: 'delete_student', studentId }),
   });
-  return res.json();
 }
 
 // -----------------------------------------------------------------
@@ -271,7 +265,10 @@ export async function studentLogout() {
 }
 
 export async function studentFetchPublicConfig() {
-  const res = await fetch('/api/auth/student?type=config', { method: 'GET' });
+  const res = await fetch('/api/auth/student?type=config', {
+    method: 'GET',
+    credentials: 'include',
+  });
   return res.json();
 }
 
