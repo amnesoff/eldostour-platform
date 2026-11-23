@@ -20,7 +20,6 @@ import {
   Users,
   ShieldAlert,
   Phone,
-  AlertTriangle,
 } from 'lucide-react';
 import { AdminLogin } from '@/components/admin/AdminLogin';
 import { AdminHeader } from '@/components/admin/AdminHeader';
@@ -253,7 +252,7 @@ export default function AdminDashboardClient({
         const failTime = new Date(f.created_at).getTime();
         if (Date.now() - failTime < 24 * 60 * 60 * 1000) {
           setSecurityAlert({
-            target: f.target_user || 'غير معروف',
+            target: f.username || 'غير معروف',
             details: f.details || 'محاولة دخول غير مصرح بها',
             ip: f.ip_address || 'غير محدد',
             time: new Date(f.created_at).toLocaleTimeString('ar-EG'),

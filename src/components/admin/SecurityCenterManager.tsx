@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Shield,
   ShieldCheck,
@@ -119,8 +119,18 @@ export function SecurityCenterManager({ onRefresh }: SecurityCenterManagerProps)
   const [successMsg, setSuccessMsg] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
 
+  // Stable ref to onRefresh to avoid re-render loops
+  const onRefreshRef = useRef(onRefresh);
+  useEffect(() => { onRefreshRef.current = onRefresh; }, [onRefresh]);
+
+  // Guard: only do the initial fetch once
+  const hasFetchedRef = useRef(false);
+
   // Load Data with 5-second timeout fallback
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (isInitial = false) => {
+    if (isInitial && hasFetchedRef.current) return;
+    if (isInitial) hasFetchedRef.current = true;
+
     setIsLoading(true);
     try {
       // 1. Fetch admin_security with timeout
@@ -132,12 +142,12 @@ export function SecurityCenterManager({ onRefresh }: SecurityCenterManagerProps)
         if (secRes?.data) {
           const s = secRes.data as AdminSecuritySettings;
           setSecuritySettings(s);
-          setNewSuperUsername(s.admin_username);
+          setNewSuperUsername(s.admin_username || '');
           setWhatsappApprovalNumber(s.whatsapp_approval_number || '');
-          if (s.super_admin_slug) setSuperAdminSlug(s.super_admin_slug);
-          if (s.super_admin_key) setSuperAdminKey(s.super_admin_key);
-          if (s.staff_portal_slug) setStaffPortalSlug(s.staff_portal_slug);
-          if (s.staff_portal_key) setStaffPortalKey(s.staff_portal_key);
+          setSuperAdminSlug(s.super_admin_slug || 'command-mazen');
+          setSuperAdminKey(s.super_admin_key || 'dustour2006');
+          setStaffPortalSlug(s.staff_portal_slug || 'staff-portal');
+          setStaffPortalKey(s.staff_portal_key || 'team2026');
         }
       } catch (e) {
         console.warn('Timeout or error fetching admin_security:', e);
@@ -172,16 +182,15 @@ export function SecurityCenterManager({ onRefresh }: SecurityCenterManagerProps)
       console.warn('Could not load security center data:', err);
     } finally {
       setIsLoading(false);
-      onRefresh?.();
+      onRefreshRef.current?.();
     }
-  }, [onRefresh]);
+  }, []); // stable — no deps that change between renders
 
   useEffect(() => {
-    loadData();
+    loadData(true);
 
     const channel = supabase
       .channel('admin_security_center_realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'admin_security' }, () => loadData())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'admin_users' }, () => loadData())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'admin_security_logs' }, () => loadData())
       .subscribe();
