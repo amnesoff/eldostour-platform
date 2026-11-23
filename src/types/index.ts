@@ -17,6 +17,7 @@ export interface Student {
   avatar_url?: string;
   phone?: string;
   is_guest?: boolean;
+  is_approved?: boolean;
   created_at: string;
 }
 
@@ -29,6 +30,7 @@ export interface RegisterStudentData {
   study_type?: StudyType;
   avatar_url?: string;
   phone?: string;
+  is_approved?: boolean;
 }
 
 export interface GuestStudentData {
@@ -37,6 +39,53 @@ export interface GuestStudentData {
   academic_year?: AcademicYearId;
   gender?: StudentGender;
   study_type?: StudyType;
+}
+
+export interface AdminSecuritySettings {
+  id: string;
+  admin_username: string;
+  password_hash: string;
+  pin_hash: string;
+  vault_enabled: boolean;
+  vault_numeric_hash?: string;
+  vault_complex_hash?: string;
+  session_version: number;
+  manual_approval_enabled: boolean;
+  updated_at?: string;
+}
+
+export interface SubAdminUser {
+  id: string;
+  username: string;
+  password_hash: string;
+  pin_hash: string;
+  can_manage_students: boolean;
+  can_manage_content: boolean;
+  can_delete_content: boolean;
+  can_access_student_vault: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface AdminSecurityLog {
+  id: string;
+  event_type: string;
+  username?: string;
+  details?: string;
+  ip_address?: string;
+  created_at: string;
+}
+
+export interface AdminSession {
+  username: string;
+  is_super_admin: boolean;
+  session_version: number;
+  permissions: {
+    can_manage_students: boolean;
+    can_manage_content: boolean;
+    can_delete_content: boolean;
+    can_access_student_vault: boolean;
+  };
 }
 
 export interface GradeCover {

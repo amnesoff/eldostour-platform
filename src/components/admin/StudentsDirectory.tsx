@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   Users,
   Search,
@@ -16,25 +16,63 @@ import {
   Mail,
   Calendar,
   Lock,
+  Unlock,
   Edit3,
   MessageCircle,
   Crown,
   ShieldCheck,
+  Check,
+  Clock,
+  Shield,
+  AlertTriangle,
+  Loader2,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
-import { Student, AcademicYearId, StudentGender } from '@/types';
+import { Student, AcademicYearId, StudentGender, AdminSession, AdminSecuritySettings } from '@/types';
 import { ACADEMIC_YEARS } from '@/lib/constants';
-import { hashPassword } from '@/lib/authUtils';
+import {
+  hashPassword,
+  hashSha256,
+  validateVaultNumericPassword,
+  validateVaultComplexPassword,
+  logAdminSecurityEvent,
+} from '@/lib/authUtils';
 
-export function StudentsDirectory() {
+interface StudentsDirectoryProps {
+  adminSession?: AdminSession | null;
+}
+
+export function StudentsDirectory({ adminSession }: StudentsDirectoryProps) {
   const [students, setStudents] = useState<Student[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedYear, setSelectedYear] = useState<AcademicYearId | 0>(0);
   const [selectedGender, setSelectedGender] = useState<StudentGender | 'all'>('all');
-  const [selectedAccountType, setSelectedAccountType] = useState<'all' | 'registered' | 'guests'>('all');
+  const [selectedAccountType, setSelectedAccountType] = useState<'all' | 'approved' | 'pending' | 'guests'>('all');
   const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  // Security & Vault State
+  const [vaultSettings, setVaultSettings] = useState<AdminSecuritySettings | null>(null);
+  const [isVaultUnlocked, setIsVaultUnlocked] = useState(false);
+  const [isConfiguringVault, setIsConfiguringVault] = useState(false);
+  const [vaultUnlockPassword1, setVaultUnlockPassword1] = useState('');
+  const [vaultUnlockPassword2, setVaultUnlockPassword2] = useState('');
+  const [showUnlockPass1, setShowUnlockPass1] = useState(false);
+  const [showUnlockPass2, setShowUnlockPass2] = useState(false);
+  const [vaultUnlockError, setVaultUnlockError] = useState('');
+  const [isUnlocking, setIsUnlocking] = useState(false);
+
+  // Vault Setup Modal State
+  const [setupNumericPassword, setSetupNumericPassword] = useState('');
+  const [setupComplexPassword, setSetupComplexPassword] = useState('');
+  const [setupConfirmNumeric, setSetupConfirmNumeric] = useState('');
+  const [setupConfirmComplex, setSetupConfirmComplex] = useState('');
+  const [setupError, setSetupError] = useState('');
+  const [setupSuccess, setSetupSuccess] = useState(false);
+  const [isSavingVaultSetup, setIsSavingVaultSetup] = useState(false);
 
   // Password Reset Modal State
   const [resetModalStudent, setResetModalStudent] = useState<Student | null>(null);
@@ -43,15 +81,43 @@ export function StudentsDirectory() {
   const [resetSuccess, setResetSuccess] = useState(false);
   const [resetError, setResetError] = useState('');
 
-  // Edit VIP Student ID Modal State (TASK 1)
+  // Edit VIP Student ID Modal State
   const [editCodeStudent, setEditCodeStudent] = useState<Student | null>(null);
   const [customStudentCode, setCustomStudentCode] = useState('');
   const [isSavingCode, setIsSavingCode] = useState(false);
   const [codeSuccess, setCodeSuccess] = useState(false);
   const [codeError, setCodeError] = useState('');
 
-  // Delete State
+  // Delete & Approve States
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [approvingId, setApprovingId] = useState<string | null>(null);
+  const [isBulkApproving, setIsBulkApproving] = useState(false);
+
+  // Permissions helper
+  const canManageStudents =
+    !adminSession || adminSession.is_super_admin || adminSession.permissions?.can_manage_students;
+  const canAccessVault =
+    !adminSession || adminSession.is_super_admin || adminSession.permissions?.can_access_student_vault;
+
+  // Inactivity auto-lock timer ref (10 minutes)
+  const lastVaultActivityRef = useRef<number>(Date.now());
+
+  // Check vault configuration from admin_security
+  const loadVaultSettings = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from('admin_security')
+        .select('*')
+        .eq('id', 'primary')
+        .maybeSingle();
+
+      if (data && !error) {
+        setVaultSettings(data as AdminSecuritySettings);
+      }
+    } catch (err) {
+      console.warn('Failed to load vault security settings:', err);
+    }
+  }, []);
 
   // Fetch Students
   const fetchStudents = useCallback(async (manual = false) => {
@@ -75,28 +141,299 @@ export function StudentsDirectory() {
     }
   }, []);
 
+  // Initialize and check sessionStorage for existing vault unlock
   useEffect(() => {
     fetchStudents();
+    loadVaultSettings();
 
-    // Realtime subscription
+    const storedUnlocked = sessionStorage.getItem('eldostour_vault_unlocked');
+    const storedUnlockTime = parseInt(sessionStorage.getItem('eldostour_vault_unlock_time') || '0', 10);
+    const tenMinutes = 10 * 60 * 1000;
+
+    if (storedUnlocked === 'true' && Date.now() - storedUnlockTime < tenMinutes) {
+      setIsVaultUnlocked(true);
+      lastVaultActivityRef.current = Date.now();
+    } else {
+      setIsVaultUnlocked(false);
+      sessionStorage.removeItem('eldostour_vault_unlocked');
+      sessionStorage.removeItem('eldostour_vault_unlock_time');
+    }
+
+    // Realtime subscription for students table
     const channel = supabase
-      .channel('admin_students_changes')
+      .channel('admin_students_directory_changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'students' }, () => {
         fetchStudents();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'admin_security' }, () => {
+        loadVaultSettings();
       })
       .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [fetchStudents]);
+  }, [fetchStudents, loadVaultSettings]);
+
+  // 10-Minute Auto-Lock Activity Tracker
+  useEffect(() => {
+    if (!isVaultUnlocked) return;
+
+    const recordVaultActivity = () => {
+      lastVaultActivityRef.current = Date.now();
+      sessionStorage.setItem('eldostour_vault_unlock_time', Date.now().toString());
+    };
+
+    window.addEventListener('mousemove', recordVaultActivity);
+    window.addEventListener('keydown', recordVaultActivity);
+    window.addEventListener('click', recordVaultActivity);
+    window.addEventListener('touchstart', recordVaultActivity);
+
+    const interval = setInterval(() => {
+      const tenMinutes = 10 * 60 * 1000;
+      if (Date.now() - lastVaultActivityRef.current > tenMinutes) {
+        setIsVaultUnlocked(false);
+        sessionStorage.removeItem('eldostour_vault_unlocked');
+        sessionStorage.removeItem('eldostour_vault_unlock_time');
+        alert('تم إغلاق خزنة بيانات الطلاب المشفرة تلقائياً بعد 10 دقائق من عدم النشاط لحماية خصوصية الطلاب.');
+      }
+    }, 15000);
+
+    return () => {
+      window.removeEventListener('mousemove', recordVaultActivity);
+      window.removeEventListener('keydown', recordVaultActivity);
+      window.removeEventListener('click', recordVaultActivity);
+      window.removeEventListener('touchstart', recordVaultActivity);
+      clearInterval(interval);
+    };
+  }, [isVaultUnlocked]);
+
+  // Handle Manual Lock Vault
+  const handleLockVault = () => {
+    setIsVaultUnlocked(false);
+    sessionStorage.removeItem('eldostour_vault_unlocked');
+    sessionStorage.removeItem('eldostour_vault_unlock_time');
+    setVaultUnlockPassword1('');
+    setVaultUnlockPassword2('');
+  };
+
+  // Handle Vault Unlock
+  const handleUnlockVault = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!vaultSettings?.vault_enabled) {
+      setIsVaultUnlocked(true);
+      return;
+    }
+
+    if (!canAccessVault) {
+      setVaultUnlockError('عذراً، هذا الحساب الإشرافي لا يملك صلاحية فتح خزنة بيانات الطلاب المشفرة.');
+      return;
+    }
+
+    setIsUnlocking(true);
+    setVaultUnlockError('');
+
+    try {
+      const hash1 = await hashSha256(vaultUnlockPassword1.trim());
+      const hash2 = await hashSha256(vaultUnlockPassword2.trim());
+
+      const isMatch1 = hash1 === vaultSettings.vault_numeric_hash;
+      const isMatch2 = hash2 === vaultSettings.vault_complex_hash;
+
+      if (isMatch1 && isMatch2) {
+        setIsVaultUnlocked(true);
+        lastVaultActivityRef.current = Date.now();
+        sessionStorage.setItem('eldostour_vault_unlocked', 'true');
+        sessionStorage.setItem('eldostour_vault_unlock_time', Date.now().toString());
+        setVaultUnlockPassword1('');
+        setVaultUnlockPassword2('');
+
+        await logAdminSecurityEvent(
+          'vault_unlocked',
+          adminSession?.username || 'Admin',
+          'تم فك تشفير وفتح خزنة بيانات الطلاب بنجاح باستخدام كلمتي المرور المزدوجتين'
+        );
+      } else {
+        setVaultUnlockError('إحدى كلمتي المرور أو كلاهما غير صحيحة. يرجى التأكد من كلمة مرور الأرقام وكلمة مرور الرموز.');
+        await logAdminSecurityEvent(
+          'vault_unlock_failed',
+          adminSession?.username || 'Admin',
+          'محاولة فاشلة لفتح خزنة بيانات الطلاب (كلمات مرور غير متطابقة)'
+        );
+      }
+    } catch (err: any) {
+      console.warn('Vault unlock error:', err);
+      setVaultUnlockError('حدث خطأ أثناء التحقق من كلمات المرور، يرجى المحاولة لاحقاً');
+    } finally {
+      setIsUnlocking(false);
+    }
+  };
+
+  // Handle Setup Double-Password Vault
+  const handleSaveVaultSetup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSetupError('');
+    setSetupSuccess(false);
+
+    // Validate Password 1 (Numeric)
+    const val1 = validateVaultNumericPassword(setupNumericPassword);
+    if (!val1.isValid) {
+      setSetupError(val1.error || 'كلمة مرور الأرقام غير صحيحة');
+      return;
+    }
+    if (setupNumericPassword !== setupConfirmNumeric) {
+      setSetupError('تأكيد كلمة مرور الأرقام غير متطابق');
+      return;
+    }
+
+    // Validate Password 2 (Complex)
+    const val2 = validateVaultComplexPassword(setupComplexPassword);
+    if (!val2.isValid) {
+      setSetupError(val2.error || 'كلمة مرور الحروف والرموز غير صحيحة');
+      return;
+    }
+    if (setupComplexPassword !== setupConfirmComplex) {
+      setSetupError('تأكيد كلمة مرور الحروف والرموز غير متطابق');
+      return;
+    }
+
+    setIsSavingVaultSetup(true);
+
+    try {
+      const numericHash = await hashSha256(setupNumericPassword.trim());
+      const complexHash = await hashSha256(setupComplexPassword.trim());
+
+      const { error } = await supabase
+        .from('admin_security')
+        .update({
+          vault_enabled: true,
+          vault_numeric_hash: numericHash,
+          vault_complex_hash: complexHash,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', 'primary');
+
+      if (error) throw error;
+
+      setSetupSuccess(true);
+      await loadVaultSettings();
+
+      await logAdminSecurityEvent(
+        'vault_configured',
+        adminSession?.username || 'Admin',
+        'تم إعداد وتفعيل نظام الحماية المزدوجة (Double-Password Vault) لخزنة بيانات الطلاب'
+      );
+
+      setTimeout(() => {
+        setIsConfiguringVault(false);
+        setSetupNumericPassword('');
+        setSetupComplexPassword('');
+        setSetupConfirmNumeric('');
+        setSetupConfirmComplex('');
+        setSetupSuccess(false);
+      }, 1500);
+    } catch (err: any) {
+      console.warn('Vault setup error:', err);
+      setSetupError(err?.message || 'فشل حفظ إعدادات حماية الخزنة');
+    } finally {
+      setIsSavingVaultSetup(false);
+    }
+  };
+
+  // Approve Single Student
+  const handleApproveStudent = async (studentId: string, studentName: string) => {
+    if (!canManageStudents) {
+      alert('ليس لديك صلاحية لاعتماد وتعديل حسابات الطلاب');
+      return;
+    }
+
+    setApprovingId(studentId);
+    try {
+      const { error } = await supabase
+        .from('students')
+        .update({ is_approved: true })
+        .eq('id', studentId);
+
+      if (error) throw error;
+
+      setStudents((prev) =>
+        prev.map((s) => (s.id === studentId ? { ...s, is_approved: true } : s))
+      );
+
+      await logAdminSecurityEvent(
+        'student_approved',
+        adminSession?.username || 'Admin',
+        `تم اعتماد حساب الطالب رسمياً: ${studentName}`
+      );
+    } catch (err: any) {
+      alert(`فشل اعتماد الحساب: ${err?.message || 'خطأ غير متوقع'}`);
+    } finally {
+      setApprovingId(null);
+    }
+  };
+
+  // Bulk Approve All Pending Students
+  const handleBulkApprove = async () => {
+    if (!canManageStudents) {
+      alert('ليس لديك صلاحية لاعتماد وتعديل حسابات الطلاب');
+      return;
+    }
+
+    const pendingStudents = students.filter((s) => !s.is_guest && s.is_approved === false);
+    if (pendingStudents.length === 0) {
+      alert('لا يوجد طلاب بانتظار الاعتماد حالياً');
+      return;
+    }
+
+    if (
+      !window.confirm(
+        `هل أنت متأكد من رغبتك في اعتماد وتفعيل كافة الحسابات المعلقة دفعة واحدة (${pendingStudents.length} طالب)؟`
+      )
+    ) {
+      return;
+    }
+
+    setIsBulkApproving(true);
+    try {
+      const { error } = await supabase
+        .from('students')
+        .update({ is_approved: true })
+        .eq('is_guest', false)
+        .eq('is_approved', false);
+
+      if (error) throw error;
+
+      setStudents((prev) =>
+        prev.map((s) => (!s.is_guest && s.is_approved === false ? { ...s, is_approved: true } : s))
+      );
+
+      await logAdminSecurityEvent(
+        'bulk_students_approved',
+        adminSession?.username || 'Admin',
+        `تم الاعتماد الجماعي لعدد (${pendingStudents.length}) طالب معلق بنجاح`
+      );
+
+      alert(`تم اعتماد وتفعيل كافة الحسابات المعلقة (${pendingStudents.length} طالب) بنجاح!`);
+    } catch (err: any) {
+      alert(`فشل الاعتماد الجماعي: ${err?.message || 'خطأ غير متوقع'}`);
+    } finally {
+      setIsBulkApproving(false);
+    }
+  };
 
   // Filtered Students
   const filteredStudents = useMemo(() => {
     return students.filter((s) => {
       // Account type filter
-      if (selectedAccountType === 'registered' && s.is_guest) return false;
-      if (selectedAccountType === 'guests' && !s.is_guest) return false;
+      if (selectedAccountType === 'approved') {
+        if (s.is_guest || s.is_approved === false) return false;
+      }
+      if (selectedAccountType === 'pending') {
+        if (s.is_guest || s.is_approved !== false) return false;
+      }
+      if (selectedAccountType === 'guests') {
+        if (!s.is_guest) return false;
+      }
 
       // Year filter
       if (selectedYear !== 0 && s.academic_year !== selectedYear) return false;
@@ -129,6 +466,10 @@ export function StudentsDirectory() {
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!resetModalStudent) return;
+    if (!canManageStudents) {
+      setResetError('ليس لديك صلاحية لتعديل كلمات مرور الطلاب');
+      return;
+    }
     if (newPassword.length < 6) {
       setResetError('كلمة المرور يجب ألا تقل عن 6 أحرف');
       return;
@@ -147,6 +488,12 @@ export function StudentsDirectory() {
 
       if (error) throw error;
 
+      await logAdminSecurityEvent(
+        'student_password_reset',
+        adminSession?.username || 'Admin',
+        `تمت إعادة تعيين كلمة مرور الطالب: ${resetModalStudent.full_name} (${resetModalStudent.student_code})`
+      );
+
       setResetSuccess(true);
       setTimeout(() => {
         setResetModalStudent(null);
@@ -160,10 +507,14 @@ export function StudentsDirectory() {
     }
   };
 
-  // Edit VIP ID Action (TASK 1: with duplicate check)
+  // Edit VIP ID Action
   const handleSaveCustomCode = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editCodeStudent) return;
+    if (!canManageStudents) {
+      setCodeError('ليس لديك صلاحية لتعديل أكواد الطلاب');
+      return;
+    }
 
     const cleanCode = customStudentCode.trim();
     if (!cleanCode) {
@@ -203,6 +554,12 @@ export function StudentsDirectory() {
         prev.map((s) => (s.id === editCodeStudent.id ? { ...s, student_code: cleanCode } : s))
       );
 
+      await logAdminSecurityEvent(
+        'student_code_customized',
+        adminSession?.username || 'Admin',
+        `تم تخصيص كود جديد للطالب ${editCodeStudent.full_name}: ${cleanCode}`
+      );
+
       setCodeSuccess(true);
       setTimeout(() => {
         setEditCodeStudent(null);
@@ -218,6 +575,11 @@ export function StudentsDirectory() {
 
   // Delete Student
   const handleDeleteStudent = async (studentId: string, name: string) => {
+    if (!canManageStudents) {
+      alert('ليس لديك صلاحية لحذف حسابات الطلاب');
+      return;
+    }
+
     if (!window.confirm(`هل أنت متأكد من حذف حساب "${name}" نهائياً من المنصة؟`)) {
       return;
     }
@@ -227,6 +589,12 @@ export function StudentsDirectory() {
       const { error } = await supabase.from('students').delete().eq('id', studentId);
       if (error) throw error;
       setStudents((prev) => prev.filter((s) => s.id !== studentId));
+
+      await logAdminSecurityEvent(
+        'student_deleted',
+        adminSession?.username || 'Admin',
+        `تم حذف حساب الطالب: ${name}`
+      );
     } catch (err: any) {
       alert(`فشل الحذف: ${err?.message || 'خطأ غير متوقع'}`);
     } finally {
@@ -234,8 +602,13 @@ export function StudentsDirectory() {
     }
   };
 
-  // Export CSV
+  // Export CSV (Requires unlocked vault if vault is enabled)
   const handleExportCSV = () => {
+    if (vaultSettings?.vault_enabled && !isVaultUnlocked) {
+      alert('عذراً، يجب فك تشفير وفتح خزنة بيانات الطلاب أولاً لتتمكن من تصدير السجل بصيغة CSV/Excel.');
+      return;
+    }
+
     if (filteredStudents.length === 0) {
       alert('لا توجد بيانات طلاب لتصديرها');
       return;
@@ -244,6 +617,7 @@ export function StudentsDirectory() {
     const headers = [
       'رقم القيد (Student Code)',
       'الاسم الكامل',
+      'حالة الاعتماد',
       'نوع الحساب',
       'رقم الهاتف',
       'الشعبة',
@@ -255,6 +629,7 @@ export function StudentsDirectory() {
     const rows = filteredStudents.map((s) => [
       s.student_code,
       s.full_name,
+      s.is_guest ? 'زائر' : s.is_approved === false ? 'معلق (بانتظار المراجعة)' : 'معتمد رسمياً',
       s.is_guest ? 'زائر (Lead)' : 'طالب رسمي',
       s.phone || 'غير مسجل',
       s.study_type || 'انتظام',
@@ -280,30 +655,75 @@ export function StudentsDirectory() {
 
   // Stats calculation
   const totalStudents = students.length;
-  const registeredCount = students.filter((s) => !s.is_guest).length;
+  const registeredCount = students.filter((s) => !s.is_guest && s.is_approved !== false).length;
+  const pendingCount = students.filter((s) => !s.is_guest && s.is_approved === false).length;
   const guestsCount = students.filter((s) => s.is_guest).length;
-  const year1Count = students.filter((s) => s.academic_year === 1).length;
-  const year2Count = students.filter((s) => s.academic_year === 2).length;
-  const year3Count = students.filter((s) => s.academic_year === 3).length;
-  const year4Count = students.filter((s) => s.academic_year === 4).length;
-  const femaleCount = students.filter((s) => s.gender === 'female').length;
-  const maleCount = students.filter((s) => s.gender === 'male').length;
+  const isVaultProtected = Boolean(vaultSettings?.vault_enabled && !isVaultUnlocked);
 
   return (
-    <div className="space-y-6 text-right">
-      {/* Top Header & Export */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-5 rounded-3xl bg-slate-900 border border-slate-800 shadow-xl">
-        <div>
-          <h2 className="text-xl font-bold text-white flex items-center gap-2">
-            <Users className="w-5 h-5 text-emerald-400" />
-            <span>سجل الطلاب والكارنيهات الرقمية وأرقام الزوار</span>
-          </h2>
-          <p className="text-xs text-slate-400 mt-1">
-            دليل الطلاب المسجلين بالمنصة، أرقام الزوار (Guest Leads)، تخصيص أرقام VIP، وإدارة الحسابات
+    <div className="space-y-6 text-right" dir="rtl">
+      {/* Top Header & Vault Status Bar */}
+      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 p-5 rounded-3xl bg-slate-900 border border-slate-800 shadow-xl">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <h2 className="text-xl font-black text-white flex items-center gap-2">
+              <Users className="w-5 h-5 text-emerald-400" />
+              <span>سجل الطلاب والكارنيهات الرقمية والخزنة المشفرة</span>
+            </h2>
+
+            {/* Vault Status Tag */}
+            {vaultSettings?.vault_enabled ? (
+              isVaultUnlocked ? (
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 text-xs font-bold animate-pulse">
+                  <Unlock className="w-3.5 h-3.5" />
+                  <span>الخزنة مفتوحة ومتاحة للمعاينة</span>
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-400 text-xs font-bold">
+                  <Lock className="w-3.5 h-3.5" />
+                  <span>الخزنة مشفرة ومقفلة 🔒</span>
+                </span>
+              )
+            ) : (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-slate-800 text-slate-400 text-xs font-medium">
+                <Shield className="w-3.5 h-3.5" />
+                <span>حماية الخزنة غير مفعلة</span>
+              </span>
+            )}
+          </div>
+
+          <p className="text-xs text-slate-400">
+            دليل الطلاب المسجلين بالمنصة، أرقام الزوار (Guest Leads)، تخصيص أرقام VIP، واعتماد الحسابات
           </p>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
+        {/* Action Controls */}
+        <div className="flex items-center gap-2 shrink-0 flex-wrap">
+          {/* Vault Controls */}
+          {vaultSettings?.vault_enabled ? (
+            isVaultUnlocked ? (
+              <button
+                onClick={handleLockVault}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-xs font-bold border border-amber-500/40 transition-colors shadow-sm cursor-pointer"
+                title="إغلاق وقفل الخزنة فورياً"
+              >
+                <Lock className="w-3.5 h-3.5" />
+                <span>قفل الخزنة الآن 🔒</span>
+              </button>
+            ) : null
+          ) : (
+            adminSession?.is_super_admin && (
+              <button
+                onClick={() => setIsConfiguringVault(true)}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 text-xs font-bold border border-purple-500/40 transition-colors shadow-sm cursor-pointer"
+              >
+                <Shield className="w-3.5 h-3.5" />
+                <span>إنشاء حماية لبيانات الطلبة 🛡️</span>
+              </button>
+            )
+          )}
+
+          {/* Refresh */}
           <button
             onClick={() => fetchStudents(true)}
             disabled={isRefreshing}
@@ -313,12 +733,13 @@ export function StudentsDirectory() {
             <span>تحديث</span>
           </button>
 
+          {/* Export CSV */}
           <button
             onClick={handleExportCSV}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-lg shadow-emerald-600/20 transition-all active:scale-95 cursor-pointer"
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-lg shadow-emerald-600/20 transition-all active:scale-95 cursor-pointer disabled:opacity-50"
           >
             <Download className="w-4 h-4" />
-            <span>تصدير السجل (Excel / CSV)</span>
+            <span>تصدير السجل (Excel)</span>
           </button>
         </div>
       </div>
@@ -330,34 +751,77 @@ export function StudentsDirectory() {
           <span className="text-xl font-black text-white">{totalStudents}</span>
         </div>
         <div className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800 text-center">
-          <span className="text-[11px] text-emerald-400 block mb-1">طلاب رسميين 🛡️</span>
+          <span className="text-[11px] text-emerald-400 block mb-1">معتمدين رسمياً ✅</span>
           <span className="text-xl font-black text-emerald-400">{registeredCount}</span>
         </div>
+        <div className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800 text-center relative overflow-hidden">
+          <span className="text-[11px] text-amber-400 block mb-1">بانتظار الاعتماد ⏳</span>
+          <span className="text-xl font-black text-amber-400">{pendingCount}</span>
+          {pendingCount > 0 && (
+            <span className="absolute top-1.5 left-1.5 w-2 h-2 rounded-full bg-amber-500 animate-ping" />
+          )}
+        </div>
         <div className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800 text-center">
-          <span className="text-[11px] text-amber-400 block mb-1">زوار برقم الهاتف 📱</span>
-          <span className="text-xl font-black text-amber-400">{guestsCount}</span>
+          <span className="text-[11px] text-sky-400 block mb-1">أرقام الزوار 📱</span>
+          <span className="text-xl font-black text-sky-400">{guestsCount}</span>
         </div>
         <div className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800 text-center">
           <span className="text-[11px] text-blue-400 block mb-1">الفرقة الأولى</span>
-          <span className="text-xl font-black text-blue-400">{year1Count}</span>
+          <span className="text-xl font-black text-blue-400">
+            {students.filter((s) => s.academic_year === 1).length}
+          </span>
         </div>
         <div className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800 text-center">
           <span className="text-[11px] text-teal-400 block mb-1">الفرقة الثانية</span>
-          <span className="text-xl font-black text-teal-400">{year2Count}</span>
+          <span className="text-xl font-black text-teal-400">
+            {students.filter((s) => s.academic_year === 2).length}
+          </span>
         </div>
         <div className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800 text-center">
           <span className="text-[11px] text-yellow-400 block mb-1">الفرقة الثالثة</span>
-          <span className="text-xl font-black text-yellow-400">{year3Count}</span>
+          <span className="text-xl font-black text-yellow-400">
+            {students.filter((s) => s.academic_year === 3).length}
+          </span>
         </div>
         <div className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800 text-center">
           <span className="text-[11px] text-purple-400 block mb-1">الفرقة الرابعة</span>
-          <span className="text-xl font-black text-purple-400">{year4Count}</span>
-        </div>
-        <div className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800 text-center">
-          <span className="text-[11px] text-rose-300 block mb-1">طالبات / طلاب</span>
-          <span className="text-sm font-black text-white">{femaleCount} 🟣 / {maleCount} 🔵</span>
+          <span className="text-xl font-black text-purple-400">
+            {students.filter((s) => s.academic_year === 4).length}
+          </span>
         </div>
       </div>
+
+      {/* Bulk Approval Notification Banner */}
+      {pendingCount > 0 && canManageStudents && (
+        <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-500/15 via-amber-500/10 to-transparent border border-amber-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-lg">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
+              <Clock className="w-5 h-5 animate-pulse" />
+            </div>
+            <div>
+              <h4 className="text-sm font-bold text-white">
+                يوجد ({pendingCount}) طالب بانتظار المراجعة والاعتماد
+              </h4>
+              <p className="text-xs text-slate-300">
+                الحسابات المعلقة لا تتمكن من استعراض المحتوى والامتحانات حتى يتم اعتمادها من الإدارة
+              </p>
+            </div>
+          </div>
+
+          <button
+            onClick={handleBulkApprove}
+            disabled={isBulkApproving}
+            className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-md transition-all active:scale-95 disabled:opacity-50 shrink-0 cursor-pointer"
+          >
+            {isBulkApproving ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <CheckCircle2 className="w-4 h-4" />
+            )}
+            <span>اعتماد الكل دفعة واحدة (Bulk Approve) ✅</span>
+          </button>
+        </div>
+      )}
 
       {/* Filter and Search Bar */}
       <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 flex flex-col md:flex-row items-center gap-3">
@@ -381,15 +845,16 @@ export function StudentsDirectory() {
           )}
         </div>
 
-        {/* Account Type Filter */}
+        {/* Account Status / Type Filter Tabs */}
         <select
           value={selectedAccountType}
           onChange={(e) => setSelectedAccountType(e.target.value as any)}
-          className="h-10 px-3 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-300 focus:outline-none focus:border-amber-500 w-full md:w-auto"
+          className="h-10 px-3 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-300 focus:outline-none focus:border-amber-500 w-full md:w-auto font-semibold"
         >
-          <option value="all">كل السجلات (طلاب وزوار)</option>
-          <option value="registered">طلاب رسميين فقط (كود معتمد)</option>
-          <option value="guests">أرقام الزوار فقط (Guest Leads)</option>
+          <option value="all">كل السجلات ({totalStudents})</option>
+          <option value="approved">طلاب معتمدين رسمياً ✅ ({registeredCount})</option>
+          <option value="pending">بانتظار المراجعة والاعتماد ⏳ ({pendingCount})</option>
+          <option value="guests">أرقام الزوار فقط 📱 ({guestsCount})</option>
         </select>
 
         {/* Year Filter */}
@@ -418,234 +883,494 @@ export function StudentsDirectory() {
         </select>
       </div>
 
-      {/* Students List Table */}
-      <div className="rounded-2xl bg-slate-900 border border-slate-800 overflow-hidden shadow-xl">
-        {isLoading ? (
-          <div className="p-12 text-center text-slate-400">
-            <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-amber-500" />
-            <p className="text-xs">جاري تحميل سجل الطلاب...</p>
+      {/* Main Container: Locked Vault Screen VS Students Table */}
+      {isVaultProtected ? (
+        /* VAULT LOCKED SCREEN */
+        <div className="relative rounded-3xl bg-slate-900 border-2 border-amber-500/40 p-8 sm:p-12 text-center shadow-2xl overflow-hidden">
+          {/* Subtle security background mesh */}
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-amber-500/10 via-slate-950/60 to-slate-950 pointer-events-none" />
+
+          <div className="relative z-10 max-w-lg mx-auto space-y-6">
+            <div className="w-20 h-20 rounded-3xl bg-amber-500/15 border-2 border-amber-500/40 text-amber-400 flex items-center justify-center mx-auto shadow-xl shadow-amber-500/20">
+              <Lock className="w-10 h-10 animate-bounce" />
+            </div>
+
+            <div className="space-y-2">
+              <h3 className="text-xl sm:text-2xl font-black text-white">
+                خزنة بيانات الطلاب مشفرة ومقفلة 🔒
+              </h3>
+              <p className="text-xs sm:text-sm text-slate-400 leading-relaxed">
+                تم تفعيل نظام الحماية المزدوجة (Double-Password Vault). للاطلاع على أرقام هواتف الطلاب والبيانات الشخصية
+                وتصدير السجلات، يرجى إدخال كلمتي المرور الخاصة بالمشرفين.
+              </p>
+            </div>
+
+            {/* Unlock Form */}
+            <form onSubmit={handleUnlockVault} className="space-y-4 text-right">
+              {/* Password 1: Numbers */}
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold text-slate-300">
+                  1. كلمة مرور الأرقام السرية (Password 1):
+                </label>
+                <div className="relative">
+                  <input
+                    type={showUnlockPass1 ? 'text' : 'password'}
+                    value={vaultUnlockPassword1}
+                    onChange={(e) => setVaultUnlockPassword1(e.target.value)}
+                    placeholder="أدخل رمز الأرقام السري..."
+                    required
+                    dir="ltr"
+                    className="w-full h-11 pr-4 pl-11 rounded-xl bg-slate-950 border border-slate-700 text-sm font-mono text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 text-right"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowUnlockPass1(!showUnlockPass1)}
+                    className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+                  >
+                    {showUnlockPass1 ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Password 2: Complex */}
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold text-slate-300">
+                  2. كلمة مرور الحروف والرموز المعقدة (Password 2):
+                </label>
+                <div className="relative">
+                  <input
+                    type={showUnlockPass2 ? 'text' : 'password'}
+                    value={vaultUnlockPassword2}
+                    onChange={(e) => setVaultUnlockPassword2(e.target.value)}
+                    placeholder="أدخل كلمة مرور الرموز والحروف..."
+                    required
+                    dir="ltr"
+                    className="w-full h-11 pr-4 pl-11 rounded-xl bg-slate-950 border border-slate-700 text-sm font-mono text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 text-right"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowUnlockPass2(!showUnlockPass2)}
+                    className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+                  >
+                    {showUnlockPass2 ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              {vaultUnlockError && (
+                <div className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2">
+                  <ShieldAlert className="w-4 h-4 shrink-0 text-rose-400" />
+                  <span>{vaultUnlockError}</span>
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={isUnlocking}
+                className="w-full h-12 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black text-sm shadow-xl shadow-amber-500/20 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer"
+              >
+                {isUnlocking ? (
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                ) : (
+                  <Unlock className="w-5 h-5" />
+                )}
+                <span>فك التشفير وفتح الخزنة 🔓</span>
+              </button>
+            </form>
+
+            <div className="pt-2 text-center">
+              <span className="text-[11px] text-slate-500 font-mono">
+                🔒 الحماية مفعلة تلقائياً — يتم قفل الخزنة بعد 10 دقائق من عدم النشاط
+              </span>
+            </div>
           </div>
-        ) : filteredStudents.length === 0 ? (
-          <div className="p-12 text-center text-slate-400">
-            <Users className="w-10 h-10 mx-auto mb-3 text-slate-600" />
-            <p className="text-sm font-bold text-slate-300">لم يتم العثور على أي طلاب مطابقين</p>
-            <p className="text-xs text-slate-500 mt-1">
-              جرب تغيير معايير البحث أو تصفية الفرق الدراسية
-            </p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs text-right border-collapse">
-              <thead>
-                <tr className="bg-slate-950/70 border-b border-slate-800 text-slate-400 font-semibold">
-                  <th className="py-3.5 px-3">رقم القيد (الكود)</th>
-                  <th className="py-3.5 px-3">الصورة والاسم الكامل</th>
-                  <th className="py-3.5 px-3">الهاتف والواتساب</th>
-                  <th className="py-3.5 px-3">الفرقة والشعبة</th>
-                  <th className="py-3.5 px-3">الحالة والنوع</th>
-                  <th className="py-3.5 px-3">البريد الإلكتروني</th>
-                  <th className="py-3.5 px-3">تاريخ التسجيل</th>
-                  <th className="py-3.5 px-3 text-center">الإجراءات</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800/60">
-                {filteredStudents.map((s) => {
-                  const yearObj = ACADEMIC_YEARS.find((y) => y.id === s.academic_year);
-                  const isCopied = copiedId === s.id;
-                  const cleanPhone = s.phone?.replace(/\D/g, '');
-                  const formattedPhone = cleanPhone?.startsWith('0') ? `2${cleanPhone}` : cleanPhone;
+        </div>
+      ) : (
+        /* STUDENTS TABLE VIEW */
+        <div className="rounded-2xl bg-slate-900 border border-slate-800 overflow-hidden shadow-xl">
+          {isLoading ? (
+            <div className="p-12 text-center text-slate-400">
+              <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-amber-500" />
+              <p className="text-xs">جاري تحميل سجل الطلاب...</p>
+            </div>
+          ) : filteredStudents.length === 0 ? (
+            <div className="p-12 text-center text-slate-400">
+              <Users className="w-10 h-10 mx-auto mb-3 text-slate-600" />
+              <p className="text-sm font-bold text-slate-300">لم يتم العثور على أي طلاب مطابقين</p>
+              <p className="text-xs text-slate-500 mt-1">
+                جرب تغيير معايير البحث أو تصفية الفرق الدراسية
+              </p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs text-right border-collapse">
+                <thead>
+                  <tr className="bg-slate-950/70 border-b border-slate-800 text-slate-400 font-semibold">
+                    <th className="py-3.5 px-3">رقم القيد (الكود)</th>
+                    <th className="py-3.5 px-3">الصورة والاسم الكامل</th>
+                    <th className="py-3.5 px-3">الهاتف والواتساب</th>
+                    <th className="py-3.5 px-3">الفرقة والشعبة</th>
+                    <th className="py-3.5 px-3">حالة الاعتماد والنوع</th>
+                    <th className="py-3.5 px-3">البريد الإلكتروني</th>
+                    <th className="py-3.5 px-3">تاريخ التسجيل</th>
+                    <th className="py-3.5 px-3 text-center">الإجراءات والاعتماد</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/60">
+                  {filteredStudents.map((s) => {
+                    const yearObj = ACADEMIC_YEARS.find((y) => y.id === s.academic_year);
+                    const isCopied = copiedId === s.id;
+                    const cleanPhone = s.phone?.replace(/\D/g, '');
+                    const formattedPhone = cleanPhone?.startsWith('0') ? `2${cleanPhone}` : cleanPhone;
+                    const isPending = !s.is_guest && s.is_approved === false;
 
-                  return (
-                    <tr
-                      key={s.id}
-                      className="hover:bg-slate-800/40 transition-colors text-slate-200"
-                    >
-                      {/* Code + Edit ID Button */}
-                      <td className="py-3 px-3 font-mono font-bold text-amber-400 whitespace-nowrap">
-                        <div className="flex items-center gap-1.5">
-                          <span>{s.student_code}</span>
-                          <button
-                            onClick={() => handleCopy(s.student_code, s.id)}
-                            className="p-1 rounded text-slate-500 hover:text-amber-400 hover:bg-slate-800"
-                            title="نسخ رقم القيد"
-                          >
-                            {isCopied ? (
-                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                            ) : (
-                              <Copy className="w-3.5 h-3.5" />
-                            )}
-                          </button>
-                          {/* TASK 1: Edit VIP Code */}
-                          <button
-                            onClick={() => {
-                              setEditCodeStudent(s);
-                              setCustomStudentCode(s.student_code);
-                              setCodeError('');
-                              setCodeSuccess(false);
-                            }}
-                            className="p-1 rounded text-slate-500 hover:text-amber-400 hover:bg-slate-800"
-                            title="تعديل الكود لرقم VIP مميز"
-                          >
-                            <Edit3 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </td>
-
-                      {/* Photo & Name */}
-                      <td className="py-3 px-3 whitespace-nowrap">
-                        <div className="flex items-center gap-2">
-                          <div className="w-8 h-8 rounded-full bg-slate-800 border border-amber-500/30 overflow-hidden shrink-0 flex items-center justify-center">
-                            {s.avatar_url ? (
-                              // eslint-disable-next-line @next/next/no-img-element
-                              <img src={s.avatar_url} alt={s.full_name} className="w-full h-full object-cover" />
-                            ) : (
-                              <span className="text-xs">{s.gender === 'female' ? '👩‍🎓' : '👨‍🎓'}</span>
-                            )}
-                          </div>
-                          <div>
-                            <span className="font-bold text-white block">{s.full_name}</span>
-                          </div>
-                        </div>
-                      </td>
-
-                      {/* Phone + WhatsApp */}
-                      <td className="py-3 px-3 whitespace-nowrap">
-                        {s.phone ? (
-                          <div className="flex items-center gap-1.5 font-mono">
-                            <span className="text-slate-300" dir="ltr">{s.phone}</span>
-                            <a
-                              href={`https://wa.me/${formattedPhone}?text=${encodeURIComponent(
-                                `مرحباً يا ${s.full_name}، نتواصل معك من إدارة منصة الدستور التعليمية - كلية الحقوق جامعة مدينة السادات`
-                              )}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="p-1 rounded bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600 hover:text-white transition-colors"
-                              title="مراسلة عبر واتساب"
-                            >
-                              <MessageCircle className="w-3.5 h-3.5 fill-current" />
-                            </a>
-                          </div>
-                        ) : (
-                          <span className="text-slate-500 text-[11px]">غير متوفر</span>
-                        )}
-                      </td>
-
-                      {/* Year & Study Type */}
-                      <td className="py-3 px-3 whitespace-nowrap">
-                        <div className="flex flex-col gap-0.5">
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-800 border border-slate-700 text-amber-300 font-medium">
-                            <GraduationCap className="w-3 h-3" />
-                            <span>{yearObj?.name || `الفرقة ${s.academic_year}`}</span>
-                          </span>
-                          <span className="text-[10px] text-slate-400">
-                            الشعبة: <strong className="text-slate-200">{s.study_type || 'انتظام'}</strong>
-                          </span>
-                        </div>
-                      </td>
-
-                      {/* Status & Gender */}
-                      <td className="py-3 px-3 whitespace-nowrap">
-                        <div className="flex flex-col gap-1">
-                          {s.is_guest ? (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 text-[10px] font-bold">
-                              زائر (Guest)
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold">
-                              <ShieldCheck className="w-3 h-3" />
-                              <span>رسمي معتمد</span>
-                            </span>
-                          )}
-
-                          <span className="text-[10px] text-slate-400">
-                            {s.gender === 'female' ? 'طالبة 🟣' : 'طالب 🔵'}
-                          </span>
-                        </div>
-                      </td>
-
-                      {/* Email */}
-                      <td className="py-3 px-3 font-mono text-slate-400 whitespace-nowrap">
-                        {s.email ? (
-                          <a
-                            href={`mailto:${s.email}`}
-                            className="hover:text-amber-400 hover:underline flex items-center gap-1"
-                          >
-                            <Mail className="w-3 h-3 text-slate-500" />
-                            <span>{s.email}</span>
-                          </a>
-                        ) : (
-                          <span className="text-slate-500">زائر بدون إيميل</span>
-                        )}
-                      </td>
-
-                      {/* Date */}
-                      <td className="py-3 px-3 text-slate-400 whitespace-nowrap font-mono text-[11px]">
-                        <div className="flex items-center gap-1">
-                          <Calendar className="w-3 h-3 text-slate-500" />
-                          <span>
-                            {new Date(s.created_at).toLocaleDateString('ar-EG', {
-                              year: 'numeric',
-                              month: 'short',
-                              day: 'numeric',
-                            })}
-                          </span>
-                        </div>
-                      </td>
-
-                      {/* Actions */}
-                      <td className="py-3 px-3 whitespace-nowrap">
-                        <div className="flex items-center justify-center gap-1.5">
-                          {/* Edit ID Button */}
-                          <button
-                            onClick={() => {
-                              setEditCodeStudent(s);
-                              setCustomStudentCode(s.student_code);
-                              setCodeError('');
-                              setCodeSuccess(false);
-                            }}
-                            className="p-1.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-400 border border-amber-500/30 transition-colors"
-                            title="تعديل الكود / تعيين رقم VIP"
-                          >
-                            <Crown className="w-3.5 h-3.5" />
-                          </button>
-
-                          {/* Reset Password */}
-                          {!s.is_guest && (
+                    return (
+                      <tr
+                        key={s.id}
+                        className={`transition-colors text-slate-200 ${
+                          isPending
+                            ? 'bg-amber-500/5 hover:bg-amber-500/10'
+                            : 'hover:bg-slate-800/40'
+                        }`}
+                      >
+                        {/* Code + Edit ID Button */}
+                        <td className="py-3 px-3 font-mono font-bold text-amber-400 whitespace-nowrap">
+                          <div className="flex items-center gap-1.5">
+                            <span>{s.student_code}</span>
                             <button
-                              onClick={() => {
-                                setResetModalStudent(s);
-                                setNewPassword('');
-                                setResetError('');
-                                setResetSuccess(false);
-                              }}
-                              className="p-1.5 rounded-lg bg-blue-500/15 hover:bg-blue-500/25 text-blue-400 border border-blue-500/30 transition-colors"
-                              title="إعادة تعيين كلمة المرور"
+                              onClick={() => handleCopy(s.student_code, s.id)}
+                              className="p-1 rounded text-slate-500 hover:text-amber-400 hover:bg-slate-800"
+                              title="نسخ رقم القيد"
                             >
-                              <KeyRound className="w-3.5 h-3.5" />
+                              {isCopied ? (
+                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                              ) : (
+                                <Copy className="w-3.5 h-3.5" />
+                              )}
                             </button>
+                            {/* Edit VIP Code */}
+                            {canManageStudents && (
+                              <button
+                                onClick={() => {
+                                  setEditCodeStudent(s);
+                                  setCustomStudentCode(s.student_code);
+                                  setCodeError('');
+                                  setCodeSuccess(false);
+                                }}
+                                className="p-1 rounded text-slate-500 hover:text-amber-400 hover:bg-slate-800"
+                                title="تعديل الكود لرقم VIP مميز"
+                              >
+                                <Edit3 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        </td>
+
+                        {/* Photo & Name */}
+                        <td className="py-3 px-3 whitespace-nowrap">
+                          <div className="flex items-center gap-2">
+                            <div className="w-8 h-8 rounded-full bg-slate-800 border border-amber-500/30 overflow-hidden shrink-0 flex items-center justify-center">
+                              {s.avatar_url ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img src={s.avatar_url} alt={s.full_name} className="w-full h-full object-cover" />
+                              ) : (
+                                <span className="text-xs">{s.gender === 'female' ? '👩‍🎓' : '👨‍🎓'}</span>
+                              )}
+                            </div>
+                            <div>
+                              <span className="font-bold text-white block">{s.full_name}</span>
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* Phone + WhatsApp */}
+                        <td className="py-3 px-3 whitespace-nowrap">
+                          {s.phone ? (
+                            <div className="flex items-center gap-1.5 font-mono">
+                              <span className="text-slate-300" dir="ltr">{s.phone}</span>
+                              <a
+                                href={`https://wa.me/${formattedPhone}?text=${encodeURIComponent(
+                                  `مرحباً يا ${s.full_name}، نتواصل معك من إدارة منصة الدستور التعليمية - كلية الحقوق جامعة مدينة السادات`
+                                )}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="p-1 rounded bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600 hover:text-white transition-colors"
+                                title="مراسلة عبر واتساب"
+                              >
+                                <MessageCircle className="w-3.5 h-3.5 fill-current" />
+                              </a>
+                            </div>
+                          ) : (
+                            <span className="text-slate-500 text-[11px]">غير متوفر</span>
                           )}
+                        </td>
 
-                          {/* Delete */}
-                          <button
-                            onClick={() => handleDeleteStudent(s.id, s.full_name)}
-                            disabled={deletingId === s.id}
-                            className="p-1.5 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 border border-rose-500/30 transition-colors disabled:opacity-50"
-                            title="حذف الحساب"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                        {/* Year & Study Type */}
+                        <td className="py-3 px-3 whitespace-nowrap">
+                          <div className="flex flex-col gap-0.5">
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-800 border border-slate-700 text-amber-300 font-medium">
+                              <GraduationCap className="w-3 h-3" />
+                              <span>{yearObj?.name || `الفرقة ${s.academic_year}`}</span>
+                            </span>
+                            <span className="text-[10px] text-slate-400">
+                              الشعبة: <strong className="text-slate-200">{s.study_type || 'انتظام'}</strong>
+                            </span>
+                          </div>
+                        </td>
+
+                        {/* Approval Status & Gender */}
+                        <td className="py-3 px-3 whitespace-nowrap">
+                          <div className="flex flex-col gap-1">
+                            {s.is_guest ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 text-[10px] font-bold">
+                                زائر (Guest)
+                              </span>
+                            ) : isPending ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-bold animate-pulse">
+                                <Clock className="w-3 h-3" />
+                                <span>معلق (بانتظار الاعتماد)</span>
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold">
+                                <ShieldCheck className="w-3 h-3" />
+                                <span>معتمد رسمياً ✅</span>
+                              </span>
+                            )}
+
+                            <span className="text-[10px] text-slate-400">
+                              {s.gender === 'female' ? 'طالبة 🟣' : 'طالب 🔵'}
+                            </span>
+                          </div>
+                        </td>
+
+                        {/* Email */}
+                        <td className="py-3 px-3 font-mono text-slate-400 whitespace-nowrap">
+                          {s.email ? (
+                            <a
+                              href={`mailto:${s.email}`}
+                              className="hover:text-amber-400 hover:underline flex items-center gap-1"
+                            >
+                              <Mail className="w-3 h-3 text-slate-500" />
+                              <span>{s.email}</span>
+                            </a>
+                          ) : (
+                            <span className="text-slate-500">زائر بدون إيميل</span>
+                          )}
+                        </td>
+
+                        {/* Date */}
+                        <td className="py-3 px-3 text-slate-400 whitespace-nowrap font-mono text-[11px]">
+                          <div className="flex items-center gap-1">
+                            <Calendar className="w-3 h-3 text-slate-500" />
+                            <span>
+                              {new Date(s.created_at).toLocaleDateString('ar-EG', {
+                                year: 'numeric',
+                                month: 'short',
+                                day: 'numeric',
+                              })}
+                            </span>
+                          </div>
+                        </td>
+
+                        {/* Actions */}
+                        <td className="py-3 px-3 whitespace-nowrap">
+                          <div className="flex items-center justify-center gap-1.5">
+                            {/* Approve Button (Only for Pending) */}
+                            {isPending && canManageStudents && (
+                              <button
+                                onClick={() => handleApproveStudent(s.id, s.full_name)}
+                                disabled={approvingId === s.id}
+                                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-md transition-all active:scale-95 disabled:opacity-50"
+                                title="اعتماد وتفعيل حساب الطالب"
+                              >
+                                {approvingId === s.id ? (
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                ) : (
+                                  <Check className="w-3.5 h-3.5" />
+                                )}
+                                <span>اعتماد ✅</span>
+                              </button>
+                            )}
+
+                            {/* Edit VIP ID Button */}
+                            {canManageStudents && (
+                              <button
+                                onClick={() => {
+                                  setEditCodeStudent(s);
+                                  setCustomStudentCode(s.student_code);
+                                  setCodeError('');
+                                  setCodeSuccess(false);
+                                }}
+                                className="p-1.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-400 border border-amber-500/30 transition-colors"
+                                title="تعديل الكود / تعيين رقم VIP"
+                              >
+                                <Crown className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+
+                            {/* Reset Password */}
+                            {!s.is_guest && canManageStudents && (
+                              <button
+                                onClick={() => {
+                                  setResetModalStudent(s);
+                                  setNewPassword('');
+                                  setResetError('');
+                                  setResetSuccess(false);
+                                }}
+                                className="p-1.5 rounded-lg bg-blue-500/15 hover:bg-blue-500/25 text-blue-400 border border-blue-500/30 transition-colors"
+                                title="إعادة تعيين كلمة المرور"
+                              >
+                                <KeyRound className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+
+                            {/* Delete */}
+                            {canManageStudents && (
+                              <button
+                                onClick={() => handleDeleteStudent(s.id, s.full_name)}
+                                disabled={deletingId === s.id}
+                                className="p-1.5 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 border border-rose-500/30 transition-colors disabled:opacity-50"
+                                title="حذف أو رفض الحساب"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Double Password Vault Setup Modal */}
+      {isConfiguringVault && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm" dir="rtl">
+          <div className="relative w-full max-w-lg bg-slate-900 border-2 border-purple-500/40 rounded-3xl p-6 sm:p-8 shadow-2xl text-right text-white space-y-5">
+            <button
+              onClick={() => setIsConfiguringVault(false)}
+              className="absolute top-4 left-4 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-purple-500/20 text-purple-400 border border-purple-400/30 flex items-center justify-center">
+                <Shield className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-lg font-black text-white">إنشاء وتفعيل حماية الخزنة المشفرة (Double-Password Vault)</h3>
+                <p className="text-xs text-purple-300/80">نظام حماية مزدوج مستقل عن كلمة مرور لوحة التحكم</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-400 leading-relaxed">
+              لحماية هواتف وبيانات الطلاب من الوصول غير المصرح به، يجب إعداد كلمتي مرور مختلفتين: الأولى رقمية فقط (4-12 رقماً)، والثانية تحتوي على حروف ورموز خاصة (!@#$).
+            </p>
+
+            <form onSubmit={handleSaveVaultSetup} className="space-y-4">
+              {/* Numeric Password */}
+              <div className="p-3.5 rounded-2xl bg-slate-950 border border-slate-800 space-y-3">
+                <h4 className="text-xs font-bold text-amber-400 flex items-center gap-1.5">
+                  <Lock className="w-3.5 h-3.5" />
+                  <span>1. كلمة مرور الأرقام السرية (Strictly Digits):</span>
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <input
+                    type="password"
+                    value={setupNumericPassword}
+                    onChange={(e) => setSetupNumericPassword(e.target.value)}
+                    placeholder="كلمة المرور (4-12 رقماً)"
+                    required
+                    dir="ltr"
+                    className="h-10 px-3 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
+                  />
+                  <input
+                    type="password"
+                    value={setupConfirmNumeric}
+                    onChange={(e) => setSetupConfirmNumeric(e.target.value)}
+                    placeholder="تأكيد كلمة مرور الأرقام"
+                    required
+                    dir="ltr"
+                    className="h-10 px-3 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
+                  />
+                </div>
+              </div>
+
+              {/* Complex Password */}
+              <div className="p-3.5 rounded-2xl bg-slate-950 border border-slate-800 space-y-3">
+                <h4 className="text-xs font-bold text-sky-400 flex items-center gap-1.5">
+                  <Lock className="w-3.5 h-3.5" />
+                  <span>2. كلمة مرور الحروف والرموز (Letters + Special Symbols):</span>
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <input
+                    type="password"
+                    value={setupComplexPassword}
+                    onChange={(e) => setSetupComplexPassword(e.target.value)}
+                    placeholder="كلمة مرور معقدة (6 خانات+)"
+                    required
+                    dir="ltr"
+                    className="h-10 px-3 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-sky-500"
+                  />
+                  <input
+                    type="password"
+                    value={setupConfirmComplex}
+                    onChange={(e) => setSetupConfirmComplex(e.target.value)}
+                    placeholder="تأكيد كلمة المرور المعقدة"
+                    required
+                    dir="ltr"
+                    className="h-10 px-3 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-sky-500"
+                  />
+                </div>
+              </div>
+
+              {setupError && (
+                <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0 text-rose-400" />
+                  <span>{setupError}</span>
+                </div>
+              )}
+
+              {setupSuccess && (
+                <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
+                  <span>تم حفظ وتفعيل نظام الحماية المزدوجة للخزنة بنجاح!</span>
+                </div>
+              )}
+
+              <div className="flex items-center gap-2 pt-2">
+                <button
+                  type="submit"
+                  disabled={isSavingVaultSetup}
+                  className="flex-1 h-11 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs shadow-lg transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  {isSavingVaultSetup ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <ShieldCheck className="w-4 h-4" />
+                  )}
+                  <span>حفظ وتفعيل الحماية الآن 🔒</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setIsConfiguringVault(false)}
+                  className="px-4 h-11 rounded-xl bg-slate-800 text-slate-300 hover:bg-slate-700 text-xs font-semibold cursor-pointer"
+                >
+                  إلغاء
+                </button>
+              </div>
+            </form>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
-      {/* TASK 1: Edit VIP Student ID Modal */}
+      {/* Edit VIP Student ID Modal */}
       {editCodeStudent && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm" dir="rtl">
           <div className="relative w-full max-w-md bg-slate-900 border border-amber-500/40 rounded-3xl p-6 shadow-2xl text-right text-white">

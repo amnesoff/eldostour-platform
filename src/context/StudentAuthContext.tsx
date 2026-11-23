@@ -19,8 +19,8 @@ interface StudentAuthContextType {
   openAuthModal: (defaultMode?: 'login' | 'register' | 'guest') => void;
   closeAuthModal: () => void;
   modalDefaultMode: 'login' | 'register' | 'guest';
-  login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
-  register: (data: RegisterStudentData) => Promise<{ success: boolean; error?: string }>;
+  login: (email: string, password: string) => Promise<{ success: boolean; error?: string; pendingApproval?: boolean }>;
+  register: (data: RegisterStudentData) => Promise<{ success: boolean; error?: string; pendingApproval?: boolean }>;
   registerGuest: (data: GuestStudentData) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
   updateStudentLocally: (updated: Student) => void;
@@ -113,7 +113,7 @@ export function StudentAuthProvider({ children }: { children: React.ReactNode })
   const login = async (
     email: string,
     password: string
-  ): Promise<{ success: boolean; error?: string }> => {
+  ): Promise<{ success: boolean; error?: string; pendingApproval?: boolean }> => {
     const cleanEmail = email.trim().toLowerCase();
     if (!cleanEmail || !password) {
       return { success: false, error: 'يرجى إدخال البريد الإلكتروني وكلمة المرور' };
@@ -147,8 +147,18 @@ export function StudentAuthProvider({ children }: { children: React.ReactNode })
         avatar_url: data.avatar_url || '',
         phone: data.phone || '',
         is_guest: data.is_guest || false,
+        is_approved: data.is_approved !== false,
         created_at: data.created_at,
       };
+
+      // Check if student is awaiting admin approval
+      if (!loggedStudent.is_guest && loggedStudent.is_approved === false) {
+        return {
+          success: false,
+          pendingApproval: true,
+          error: 'حسابك قيد المراجعة والاعتماد من قبل إدارة منصة الدستور ⏳',
+        };
+      }
 
       setStudent(loggedStudent);
       setIsGuest(false);
@@ -164,7 +174,7 @@ export function StudentAuthProvider({ children }: { children: React.ReactNode })
   // Register Official Student
   const register = async (
     regData: RegisterStudentData
-  ): Promise<{ success: boolean; error?: string }> => {
+  ): Promise<{ success: boolean; error?: string; pendingApproval?: boolean }> => {
     const cleanEmail = regData.email.trim().toLowerCase();
     const cleanName = regData.full_name.trim();
 
@@ -190,7 +200,7 @@ export function StudentAuthProvider({ children }: { children: React.ReactNode })
         .from('students')
         .select('id')
         .eq('email', cleanEmail)
-        .single();
+        .maybeSingle();
 
       if (existing) {
         return {
@@ -199,12 +209,22 @@ export function StudentAuthProvider({ children }: { children: React.ReactNode })
         };
       }
 
-      // 2. Generate sequential student code (starting from 1001)
+      // 2. Check if manual approval is required
+      const { data: secRow } = await supabase
+        .from('admin_security')
+        .select('manual_approval_enabled')
+        .eq('id', 'primary')
+        .maybeSingle();
+
+      const isManualApprovalEnabled = secRow?.manual_approval_enabled === true;
+      const isApproved = !isManualApprovalEnabled;
+
+      // 3. Generate sequential student code (starting from 1001)
       const { count } = await supabase.from('students').select('*', { count: 'exact', head: true });
       const studentCode = generateSequentialStudentCode(1001 + (count || 0));
       const pHash = await hashPassword(regData.password);
 
-      // 3. Insert into Supabase
+      // 4. Insert into Supabase
       const { data: created, error: insErr } = await supabase
         .from('students')
         .insert({
@@ -218,6 +238,7 @@ export function StudentAuthProvider({ children }: { children: React.ReactNode })
           avatar_url: regData.avatar_url || '',
           phone: regData.phone || '',
           is_guest: false,
+          is_approved: isApproved,
         })
         .select()
         .single();
@@ -237,15 +258,21 @@ export function StudentAuthProvider({ children }: { children: React.ReactNode })
         avatar_url: created.avatar_url || '',
         phone: created.phone || '',
         is_guest: false,
+        is_approved: created.is_approved !== false,
         created_at: created.created_at,
       };
+
+      if (!isApproved) {
+        // Pending manual approval -> don't grant full auto-access
+        return { success: true, pendingApproval: true };
+      }
 
       setStudent(newStudent);
       setIsGuest(false);
       syncStorage(newStudent, false);
       setIsAuthModalOpen(false);
 
-      return { success: true };
+      return { success: true, pendingApproval: false };
     } catch (err: any) {
       return { success: false, error: err?.message || 'حدث خطأ أثناء التسجيل' };
     }

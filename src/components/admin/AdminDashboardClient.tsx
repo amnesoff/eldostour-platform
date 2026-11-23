@@ -17,6 +17,7 @@ import {
   BookA,
   Sparkles,
   Users,
+  ShieldAlert,
 } from 'lucide-react';
 import { AdminLogin } from '@/components/admin/AdminLogin';
 import { AdminHeader } from '@/components/admin/AdminHeader';
@@ -30,10 +31,11 @@ import { ExamCountdownManager } from '@/components/admin/ExamCountdownManager';
 import { CmsManager } from '@/components/admin/CmsManager';
 import { QuizzesManager } from '@/components/admin/QuizzesManager';
 import { StudentsDirectory } from '@/components/admin/StudentsDirectory';
+import { SecurityCenterManager } from '@/components/admin/SecurityCenterManager';
 import { RequestsManager } from '@/components/admin/RequestsManager';
 import { ThemeCharacterManager } from '@/components/admin/ThemeCharacterManager';
 import { supabase } from '@/lib/supabase';
-import { Material, Subject, UrgentNewsItem, ExamCountdownSettings } from '@/types';
+import { Material, Subject, UrgentNewsItem, ExamCountdownSettings, AdminSession } from '@/types';
 
 type AdminTab =
   | 'upload'
@@ -42,6 +44,7 @@ type AdminTab =
   | 'materials'
   | 'quizzes'
   | 'students'
+  | 'security'
   | 'french'
   | 'themes'
   | 'cms'
@@ -54,6 +57,7 @@ const INACTIVITY_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 
 export default function AdminDashboardClient() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
+  const [adminSession, setAdminSession] = useState<AdminSession | null>(null);
   const [activeTab, setActiveTabState] = useState<AdminTab>('upload');
 
   // Tab Persistence across F5 page reloads
@@ -68,6 +72,7 @@ export default function AdminDashboardClient() {
         'materials',
         'quizzes',
         'students',
+        'security',
         'french',
         'themes',
         'cms',
@@ -99,17 +104,31 @@ export default function AdminDashboardClient() {
   // Logout handler
   const handleLogout = useCallback(() => {
     sessionStorage.removeItem('eldostour_admin_auth');
+    sessionStorage.removeItem('eldostour_admin_session');
     sessionStorage.removeItem('eldostour_admin_login_time');
+    sessionStorage.removeItem('eldostour_admin_last_activity');
+    sessionStorage.removeItem('eldostour_vault_unlocked');
+    sessionStorage.removeItem('eldostour_vault_unlock_time');
     setIsAuthenticated(false);
+    setAdminSession(null);
   }, []);
 
   // Check authentication on initial load
   useEffect(() => {
     const authStatus = sessionStorage.getItem('eldostour_admin_auth');
+    const sessionStr = sessionStorage.getItem('eldostour_admin_session');
     if (authStatus === 'authenticated') {
       setIsAuthenticated(true);
+      if (sessionStr) {
+        try {
+          setAdminSession(JSON.parse(sessionStr));
+        } catch (e) {
+          console.warn('Failed to parse admin session:', e);
+        }
+      }
     } else {
       setIsAuthenticated(false);
+      setAdminSession(null);
     }
   }, []);
 
@@ -216,10 +235,27 @@ export default function AdminDashboardClient() {
       })
       .subscribe();
 
+    const panicChannel = supabase
+      .channel('admin_security_panic_version_sync')
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'admin_security' },
+        (payload) => {
+          const newVersion = payload.new?.session_version;
+          const currentVersion = adminSession?.session_version || 1;
+          if (newVersion && newVersion > currentVersion) {
+            alert('⚠️ تم تفعيل إغلاق الطوارئ المركزي من قبل الإدارة العليا. تم إنهاء كافة الجلسات النشطة لحماية المنصة.');
+            handleLogout();
+          }
+        }
+      )
+      .subscribe();
+
     return () => {
       supabase.removeChannel(channel);
+      supabase.removeChannel(panicChannel);
     };
-  }, [isAuthenticated, loadAdminData]);
+  }, [isAuthenticated, loadAdminData, adminSession, handleLogout]);
 
   if (isAuthenticated === null) {
     return (
@@ -230,7 +266,21 @@ export default function AdminDashboardClient() {
   }
 
   if (!isAuthenticated) {
-    return <AdminLogin onSuccess={() => setIsAuthenticated(true)} />;
+    return (
+      <AdminLogin
+        onSuccess={() => {
+          const sessionStr = sessionStorage.getItem('eldostour_admin_session');
+          if (sessionStr) {
+            try {
+              setAdminSession(JSON.parse(sessionStr));
+            } catch (e) {
+              console.warn(e);
+            }
+          }
+          setIsAuthenticated(true);
+        }}
+      />
+    );
   }
 
   // Calculate quick stats
@@ -246,6 +296,15 @@ export default function AdminDashboardClient() {
     { id: 'materials', label: 'إدارة المحاضرات (تحديد وحذف)', count: totalMaterials, icon: <Layers className="w-4 h-4" /> },
     { id: 'quizzes', label: 'الاختبارات وبناء الأسئلة والتكريم', icon: <Award className="w-4 h-4" /> },
     { id: 'students', label: 'سجل الطلاب والكارنيهات', icon: <Users className="w-4 h-4 text-emerald-400" /> },
+    ...(adminSession?.is_super_admin
+      ? [
+          {
+            id: 'security' as AdminTab,
+            label: 'مركز الأمان وإدارة المشرفين',
+            icon: <ShieldAlert className="w-4 h-4 text-purple-400" />,
+          },
+        ]
+      : []),
     { id: 'french', label: 'القاموس الفرنسي الصوتي', icon: <BookA className="w-4 h-4" /> },
     { id: 'themes', label: 'الثيمات والشخصيات التفاعلية', icon: <Sparkles className="w-4 h-4 text-purple-400" /> },
     { id: 'cms', label: 'الـ CMS والواتساب والتواصل', icon: <Settings className="w-4 h-4" /> },
@@ -257,7 +316,7 @@ export default function AdminDashboardClient() {
 
   return (
     <div className="min-h-screen flex flex-col bg-[#070c18] text-slate-100 select-none selection:bg-amber-500/20">
-      <AdminHeader onLogout={handleLogout} />
+      <AdminHeader onLogout={handleLogout} adminSession={adminSession} />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
         {/* Quick Stats Overview Banner */}
@@ -378,7 +437,11 @@ export default function AdminDashboardClient() {
           )}
 
           {activeTab === 'students' && (
-            <StudentsDirectory />
+            <StudentsDirectory adminSession={adminSession} />
+          )}
+
+          {activeTab === 'security' && (
+            <SecurityCenterManager onRefresh={() => loadAdminData(false)} />
           )}
 
           {activeTab === 'french' && (

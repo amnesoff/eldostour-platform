@@ -531,3 +531,100 @@ CREATE POLICY "Public delete avatars" ON storage.objects FOR DELETE TO anon, aut
 ALTER PUBLICATION supabase_realtime ADD TABLE public.subject_covers;
 ALTER PUBLICATION supabase_realtime ADD TABLE public.students;
 ALTER PUBLICATION supabase_realtime ADD TABLE public.grade_covers;
+
+
+-- 20. Student Approval Status (Manual Approval Workflow)
+ALTER TABLE public.students ADD COLUMN IF NOT EXISTS is_approved BOOLEAN DEFAULT false NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_students_is_approved ON public.students(is_approved);
+
+-- Backfill existing registered students to approved so current users are not locked out
+UPDATE public.students SET is_approved = true WHERE is_guest = false AND is_approved IS FALSE;
+
+-- 21. Fortress-Grade Admin Security & Vault Configuration
+CREATE TABLE IF NOT EXISTS public.admin_security (
+    id TEXT PRIMARY KEY DEFAULT 'primary',
+    admin_username TEXT NOT NULL DEFAULT 'Dr. Mazen 2006',
+    password_hash TEXT NOT NULL,
+    pin_hash TEXT NOT NULL,
+    vault_enabled BOOLEAN NOT NULL DEFAULT false,
+    vault_numeric_hash TEXT,
+    vault_complex_hash TEXT,
+    session_version INTEGER NOT NULL DEFAULT 1,
+    manual_approval_enabled BOOLEAN NOT NULL DEFAULT false,
+    updated_at TIMESTAMPTZ DEFAULT now() NOT NULL
+);
+
+-- Pre-seed default Super Admin if not exists:
+-- Default Password 'Mazen@2026' SHA-256: b33b653a50da45bba3409e563f479875fc2e3a379d8a478bd515f5594de12200
+-- Default PIN '202600' SHA-256: 588505a0785bab576624a7783e03236d3858987ca0a59b5ce340c6c5e808e5bf
+INSERT INTO public.admin_security (id, admin_username, password_hash, pin_hash, vault_enabled, session_version, manual_approval_enabled)
+VALUES (
+    'primary',
+    'Dr. Mazen 2006',
+    'b33b653a50da45bba3409e563f479875fc2e3a379d8a478bd515f5594de12200',
+    '588505a0785bab576624a7783e03236d3858987ca0a59b5ce340c6c5e808e5bf',
+    false,
+    1,
+    false
+)
+ON CONFLICT (id) DO NOTHING;
+
+ALTER TABLE public.admin_security ENABLE ROW LEVEL SECURITY;
+DO $$ 
+BEGIN
+    DROP POLICY IF EXISTS "Public read admin_security" ON public.admin_security;
+    CREATE POLICY "Public read admin_security" ON public.admin_security FOR SELECT USING (true);
+
+    DROP POLICY IF EXISTS "Public update admin_security" ON public.admin_security;
+    CREATE POLICY "Public update admin_security" ON public.admin_security FOR UPDATE USING (true);
+
+    DROP POLICY IF EXISTS "Public insert admin_security" ON public.admin_security;
+    CREATE POLICY "Public insert admin_security" ON public.admin_security FOR INSERT WITH CHECK (true);
+END $$;
+GRANT ALL ON TABLE public.admin_security TO anon, authenticated, service_role;
+
+-- 22. Sub-Admin Management & Granular Permissions
+CREATE TABLE IF NOT EXISTS public.admin_users (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    username TEXT UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    pin_hash TEXT NOT NULL,
+    can_manage_students BOOLEAN NOT NULL DEFAULT false,
+    can_manage_content BOOLEAN NOT NULL DEFAULT true,
+    can_delete_content BOOLEAN NOT NULL DEFAULT false,
+    can_access_student_vault BOOLEAN NOT NULL DEFAULT false,
+    created_at TIMESTAMPTZ DEFAULT now() NOT NULL,
+    updated_at TIMESTAMPTZ DEFAULT now() NOT NULL
+);
+
+ALTER TABLE public.admin_users ENABLE ROW LEVEL SECURITY;
+DO $$ 
+BEGIN
+    DROP POLICY IF EXISTS "Public access admin_users" ON public.admin_users;
+    CREATE POLICY "Public access admin_users" ON public.admin_users FOR ALL USING (true) WITH CHECK (true);
+END $$;
+GRANT ALL ON TABLE public.admin_users TO anon, authenticated, service_role;
+
+-- 23. Security Incident & Audit Logs
+CREATE TABLE IF NOT EXISTS public.admin_security_logs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    event_type TEXT NOT NULL,
+    username TEXT DEFAULT 'Unknown',
+    details TEXT DEFAULT '',
+    ip_address TEXT DEFAULT '',
+    created_at TIMESTAMPTZ DEFAULT now() NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_admin_security_logs_created_at ON public.admin_security_logs(created_at DESC);
+
+ALTER TABLE public.admin_security_logs ENABLE ROW LEVEL SECURITY;
+DO $$ 
+BEGIN
+    DROP POLICY IF EXISTS "Public access admin_security_logs" ON public.admin_security_logs;
+    CREATE POLICY "Public access admin_security_logs" ON public.admin_security_logs FOR ALL USING (true) WITH CHECK (true);
+END $$;
+GRANT ALL ON TABLE public.admin_security_logs TO anon, authenticated, service_role;
+
+ALTER PUBLICATION supabase_realtime ADD TABLE public.admin_security;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.admin_users;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.admin_security_logs;

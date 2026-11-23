@@ -1,5 +1,18 @@
+import { supabase } from '@/lib/supabase';
+
 /**
- * Secure client/server password hashing using Web Crypto API SHA-256
+ * Standard SHA-256 hashing using Web Crypto API
+ */
+export async function hashSha256(str: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(str);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * Secure client/server password hashing using Web Crypto API SHA-256 with platform salt
  */
 export async function hashPassword(password: string): Promise<string> {
   const encoder = new TextEncoder();
@@ -7,6 +20,96 @@ export async function hashPassword(password: string): Promise<string> {
   const hashBuffer = await crypto.subtle.digest('SHA-256', data);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
   return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * Check if a student name contains reserved / impersonation words
+ */
+export function isReservedName(name: string): boolean {
+  const reservedWords = [
+    'المؤسس',
+    'مؤسس',
+    'ادمن',
+    'أدمن',
+    'admin',
+    'founder',
+    'مدير',
+    'الدستور',
+    'test',
+    'hacker',
+    'mazen',
+    'مازن',
+    'rahma',
+    'رحمة',
+    'walid',
+    'وليد',
+  ];
+
+  const clean = name.toLowerCase().trim();
+  return reservedWords.some((w) => clean.includes(w));
+}
+
+/**
+ * Normalize Arabic text for duplicate detection (removes diacritics, unifies alef, taa marbuta)
+ */
+export function normalizeArabicText(text: string): string {
+  if (!text) return '';
+  return text
+    .trim()
+    .toLowerCase()
+    .replace(/[\u064B-\u065F\u0670]/g, '') // Remove tashkeel/diacritics
+    .replace(/[أإآٱ]/g, 'ا') // Unify alefs
+    .replace(/ة/g, 'ه') // Unify taa marbuta
+    .replace(/ى/g, 'ي') // Unify yaa
+    .replace(/ـ/g, '') // Remove tatweel
+    .replace(/\s+/g, ' '); // Collapse spaces
+}
+
+/**
+ * Validate Vault Password 1 (Strictly digits only, 4 to 12 digits)
+ */
+export function validateVaultNumericPassword(pwd: string): { isValid: boolean; error?: string } {
+  const trimmed = pwd.trim();
+  if (!/^[0-9]{4,12}$/.test(trimmed)) {
+    return {
+      isValid: false,
+      error: 'باسورد الأرقام يجب أن يتكون من 4 إلى 12 رقماً فقط بدون أي حروف أو مسافات',
+    };
+  }
+  return { isValid: true };
+}
+
+/**
+ * Validate Vault Password 2 (Letters + Special Symbols, min 6 chars)
+ */
+export function validateVaultComplexPassword(pwd: string): { isValid: boolean; error?: string } {
+  const trimmed = pwd.trim();
+  if (!/^(?=.*[A-Za-z])(?=.*[^A-Za-z0-9]).{6,}$/.test(trimmed)) {
+    return {
+      isValid: false,
+      error: 'باسورد الحروف والرموز يجب أن يحتوي على حروف ورموز خاصة (!@#$%...) ولا يقل عن 6 خانات',
+    };
+  }
+  return { isValid: true };
+}
+
+/**
+ * Log admin security events to public.admin_security_logs
+ */
+export async function logAdminSecurityEvent(
+  eventType: string,
+  username = '',
+  details = ''
+): Promise<void> {
+  try {
+    await supabase.from('admin_security_logs').insert({
+      event_type: eventType,
+      username: username || 'System',
+      details,
+    });
+  } catch (err) {
+    console.warn('Could not record admin security log:', err);
+  }
 }
 
 /**
