@@ -11,12 +11,14 @@ import {
   Calendar,
   HardDrive,
   Sparkles,
-  ExternalLink,
   Flame,
+  Loader2,
+  Eye,
 } from 'lucide-react';
 import { Material } from '@/types';
 import { isNewItem, formatDateArabic, formatFileSize } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
+import { downloadDirectWatermarkedPdf } from '@/lib/pdfWatermark';
 
 interface MaterialCardProps {
   material: Material;
@@ -32,6 +34,7 @@ export function MaterialCard({
   const [likes, setLikes] = useState(material.likes_count || 0);
   const [hasLiked, setHasLiked] = useState(false);
   const [isLiking, setIsLiking] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
 
   // Check if student already liked this item in this browser
   useEffect(() => {
@@ -89,6 +92,34 @@ export function MaterialCard({
     }
   };
 
+  const handleDirectDownload = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (isDownloading) return;
+    setIsDownloading(true);
+    try {
+      const studentName = localStorage.getItem('eldostour_student_name') || 'طالب كلية الحقوق';
+      const studentCode = localStorage.getItem('eldostour_student_id_num') || 'DST-LAW';
+      await downloadDirectWatermarkedPdf(material.file_url, material.title, {
+        name: studentName,
+        code: studentCode,
+      });
+    } catch (err) {
+      console.warn('Direct download error:', err);
+      // Fallback
+      window.open(material.file_url, '_blank');
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
+  const handleCardClick = () => {
+    if (isPdf) {
+      onOpenPdf?.(material);
+    } else {
+      onOpenVideo?.(material);
+    }
+  };
+
   const isNew = isNewItem(material.created_at, 72);
   const isTrending = (material.likes_count || 0) >= 5 || (material.views_count || 0) >= 15;
   const isPdf = material.file_type === 'pdf';
@@ -101,7 +132,8 @@ export function MaterialCard({
       exit={{ opacity: 0, scale: 0.95 }}
       whileHover={{ y: -4 }}
       transition={{ duration: 0.25 }}
-      className="relative flex flex-col rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-sm hover:shadow-xl hover:border-amber-500/40 dark:hover:border-amber-400/30 transition-all overflow-hidden group"
+      onClick={handleCardClick}
+      className="relative flex flex-col rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-sm hover:shadow-xl hover:border-amber-500/40 dark:hover:border-amber-400/30 transition-all overflow-hidden group cursor-pointer select-none"
     >
       {/* Top Banner & Subject Tag */}
       <div className="p-4 sm:p-5 pb-3 flex-1 flex flex-col">
@@ -178,7 +210,10 @@ export function MaterialCard({
       <div className="px-4 sm:px-5 py-3 bg-slate-50/70 dark:bg-slate-950/50 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3">
         {/* Like Button */}
         <button
-          onClick={handleLike}
+          onClick={(e) => {
+            e.stopPropagation();
+            handleLike();
+          }}
           disabled={hasLiked}
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${
             hasLiked
@@ -194,33 +229,39 @@ export function MaterialCard({
           </span>
         </button>
 
-        {/* Action Button: PDF View/Download or Video Player */}
+        {/* Action Button: Direct One-Tap Programmatic Download or Video Player */}
         {isPdf ? (
-          <div className="flex items-center gap-1.5">
-            {onOpenPdf && (
-              <button
-                onClick={() => onOpenPdf(material)}
-                className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-200/80 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200 transition-colors"
-                title="معاينة المستند"
-              >
-                <ExternalLink className="w-3.5 h-3.5" />
-                <span>معاينة</span>
-              </button>
-            )}
-            <a
-              href={material.file_url}
-              target="_blank"
-              rel="noopener noreferrer"
-              download
-              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs shadow-sm transition-all active:scale-95"
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] text-slate-400 flex items-center gap-1 ml-1 group-hover:text-amber-500 transition-colors">
+              <Eye className="w-3.5 h-3.5" />
+              <span>انقر للمعاينة</span>
+            </span>
+
+            <button
+              onClick={handleDirectDownload}
+              disabled={isDownloading}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs shadow-sm transition-all active:scale-95 disabled:opacity-60"
+              title="تحميل مباشر إلى مجلد التنزيلات بالجهاز"
             >
-              <Download className="w-3.5 h-3.5" />
-              <span>تحميل PDF</span>
-            </a>
+              {isDownloading ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>جارٍ التحميل...</span>
+                </>
+              ) : (
+                <>
+                  <Download className="w-3.5 h-3.5" />
+                  <span>تحميل مباشر</span>
+                </>
+              )}
+            </button>
           </div>
         ) : (
           <button
-            onClick={() => onOpenVideo?.(material)}
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenVideo?.(material);
+            }}
             className="flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold text-xs shadow-md shadow-blue-500/20 transition-all active:scale-95"
           >
             <Play className="w-3.5 h-3.5 fill-current" />

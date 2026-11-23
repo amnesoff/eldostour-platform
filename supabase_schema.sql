@@ -434,4 +434,41 @@ ALTER PUBLICATION supabase_realtime ADD TABLE public.student_requests;
 ALTER PUBLICATION supabase_realtime ADD TABLE public.lecture_bundles;
 ALTER PUBLICATION supabase_realtime ADD TABLE public.lecture_ratings;
 ALTER PUBLICATION supabase_realtime ADD TABLE public.french_terms;
+-- 17. Create Students Table (Student Registration & Digital ID System)
+CREATE TABLE IF NOT EXISTS public.students (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    student_code TEXT UNIQUE NOT NULL,
+    full_name TEXT NOT NULL,
+    email TEXT UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    gender TEXT NOT NULL CHECK (gender IN ('male', 'female')),
+    academic_year INTEGER NOT NULL CHECK (academic_year >= 1 AND academic_year <= 4),
+    created_at TIMESTAMPTZ DEFAULT now() NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_students_student_code ON public.students(student_code);
+CREATE INDEX IF NOT EXISTS idx_students_email ON public.students(email);
+CREATE INDEX IF NOT EXISTS idx_students_academic_year ON public.students(academic_year);
+
+-- Enable RLS and permissions for students
+ALTER TABLE public.students ENABLE ROW LEVEL SECURITY;
+
+DO $$ 
+BEGIN
+    DROP POLICY IF EXISTS "Public can view students" ON public.students;
+    CREATE POLICY "Public can view students" ON public.students FOR SELECT USING (true);
+    
+    DROP POLICY IF EXISTS "Public can register students" ON public.students;
+    CREATE POLICY "Public can register students" ON public.students FOR INSERT WITH CHECK (true);
+    
+    DROP POLICY IF EXISTS "Public can update students" ON public.students;
+    CREATE POLICY "Public can update students" ON public.students FOR UPDATE USING (true);
+    
+    DROP POLICY IF EXISTS "Public can delete students" ON public.students;
+    CREATE POLICY "Public can delete students" ON public.students FOR DELETE USING (true);
+END $$;
+
+GRANT ALL ON TABLE public.students TO anon, authenticated, service_role;
+
 ALTER PUBLICATION supabase_realtime ADD TABLE public.subject_covers;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.students;

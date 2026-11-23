@@ -1,7 +1,27 @@
 export type AcademicYearId = 1 | 2 | 3 | 4;
 
 export type GenderTheme = 'blue' | 'burgundy';
+export type StudentGender = 'male' | 'female';
 export type OccasionTheme = 'default' | 'ramadan' | 'new_year' | 'exams' | 'valentine';
+
+export interface Student {
+  id: string;
+  student_code: string;
+  full_name: string;
+  email: string;
+  password_hash?: string;
+  gender: StudentGender;
+  academic_year: AcademicYearId;
+  created_at: string;
+}
+
+export interface RegisterStudentData {
+  full_name: string;
+  email: string;
+  password: string;
+  gender: StudentGender;
+  academic_year: AcademicYearId;
+}
 
 export type CharacterPresetId =
   | 'student-girl-sign'

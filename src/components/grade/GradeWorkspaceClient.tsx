@@ -12,7 +12,6 @@ import {
   Sparkles,
   Award,
   RefreshCw,
-  FolderArchive,
   ChevronLeft,
 } from 'lucide-react';
 import { Navbar } from '@/components/layout/Navbar';
@@ -80,23 +79,66 @@ export default function GradeWorkspaceClient({ gradeId }: GradeWorkspaceClientPr
   const [activePdf, setActivePdf] = useState<Material | null>(null);
   const [activeQuiz, setActiveQuiz] = useState<Quiz | null>(null);
 
-  // Session Storage Persistence for Active Subject & Tab across F5 refresh
-  useEffect(() => {
-    try {
-      const savedTab = sessionStorage.getItem(`eldostour_grade_${gradeId}_subject_tab`);
-      if (savedTab && ['pdf', 'video', 'questions'].includes(savedTab)) {
-        setSelectedSubjectTabState(savedTab as any);
-      }
+  // Fallback synthesized covers if no subject_covers exist in DB yet
+  const displayCovers: SubjectCover[] = useMemo(() => {
+    if (covers.length > 0) return covers;
 
-      const savedCoverId = sessionStorage.getItem(`eldostour_grade_${gradeId}_selected_cover_id`);
-      if (savedCoverId && covers.length > 0) {
-        const found = covers.find((c) => c.id === savedCoverId);
-        if (found) setSelectedCover(found);
+    // Synthesize from existing subjects to avoid empty screen before admin uploads covers
+    return subjects.map((sub) => {
+      const subMats = materials.filter((m) => m.subject_id === sub.id);
+      const subQs = quizzes.filter((q) => q.subject_id === sub.id);
+      return {
+        id: `subject-${sub.id}`,
+        subject_name: sub.name,
+        year: gradeId,
+        subject_id: sub.id,
+        cover_image_url: '/logo.png',
+        preview_video_url: '',
+        professor_name: '',
+        description: 'انقر لاستعراض المحاضرات والـ PDF، شروحات الفيديو، وبنك الأسئلة.',
+        materials_count: subMats.filter((m) => m.file_type === 'pdf').length,
+        videos_count: subMats.filter((m) => m.file_type === 'video').length,
+        quizzes_count: subQs.length,
+        created_at: sub.created_at,
+      };
+    });
+  }, [covers, subjects, materials, quizzes, gradeId]);
+
+  // URL Query Sync and Browser Back-Button (popstate) Handler (TASK 1)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const subParam = params.get('subject');
+
+    if (subParam && displayCovers.length > 0) {
+      const found = displayCovers.find((c) => c.id === subParam);
+      if (found) {
+        setSelectedCover(found);
       }
-    } catch {
-      // ignore
+    } else if (!subParam) {
+      // Entering /grade/[id] without ?subject MUST ALWAYS start at Level 1
+      setSelectedCover(null);
     }
-  }, [gradeId, covers]);
+  }, [displayCovers]);
+
+  // Listen to browser Back/Forward navigation
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const handlePopState = () => {
+      const params = new URLSearchParams(window.location.search);
+      const subParam = params.get('subject');
+      if (subParam && displayCovers.length > 0) {
+        const found = displayCovers.find((c) => c.id === subParam);
+        setSelectedCover(found || null);
+      } else {
+        setSelectedCover(null);
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [displayCovers]);
 
   const setSelectedSubjectTab = (tab: 'pdf' | 'video' | 'questions') => {
     setSelectedSubjectTabState(tab);
@@ -112,15 +154,18 @@ export default function GradeWorkspaceClient({ gradeId }: GradeWorkspaceClientPr
     setSearchQuery('');
     setMultiSelectMode(false);
     setSelectedForDownload([]);
-    try {
+
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
       if (cov) {
-        sessionStorage.setItem(`eldostour_grade_${gradeId}_selected_cover_id`, cov.id);
+        url.searchParams.set('subject', cov.id);
+        window.history.pushState({ subjectId: cov.id }, '', url.toString());
       } else {
-        sessionStorage.removeItem(`eldostour_grade_${gradeId}_selected_cover_id`);
+        url.searchParams.delete('subject');
+        window.history.pushState({}, '', url.toString());
       }
-    } catch {
-      // ignore
     }
+
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -235,31 +280,6 @@ export default function GradeWorkspaceClient({ gradeId }: GradeWorkspaceClientPr
       supabase.removeChannel(channel);
     };
   }, [gradeId, loadGradeData]);
-
-  // Fallback synthesized covers if no subject_covers exist in DB yet
-  const displayCovers: SubjectCover[] = useMemo(() => {
-    if (covers.length > 0) return covers;
-
-    // Synthesize from existing subjects to avoid empty screen before admin uploads covers
-    return subjects.map((sub) => {
-      const subMats = materials.filter((m) => m.subject_id === sub.id);
-      const subQs = quizzes.filter((q) => q.subject_id === sub.id);
-      return {
-        id: `subject-${sub.id}`,
-        subject_name: sub.name,
-        year: gradeId,
-        subject_id: sub.id,
-        cover_image_url: '/logo.png',
-        preview_video_url: '',
-        professor_name: '',
-        description: 'انقر لاستعراض المحاضرات والـ PDF، شروحات الفيديو، وبنك الأسئلة.',
-        materials_count: subMats.filter((m) => m.file_type === 'pdf').length,
-        videos_count: subMats.filter((m) => m.file_type === 'video').length,
-        quizzes_count: subQs.length,
-        created_at: sub.created_at,
-      };
-    });
-  }, [covers, subjects, materials, quizzes, gradeId]);
 
   // Filtered covers for Level 1 Search
   const filteredCovers = useMemo(() => {

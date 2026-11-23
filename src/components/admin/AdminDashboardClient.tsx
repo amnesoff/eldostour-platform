@@ -16,6 +16,7 @@ import {
   FolderArchive,
   BookA,
   Sparkles,
+  Users,
 } from 'lucide-react';
 import { AdminLogin } from '@/components/admin/AdminLogin';
 import { AdminHeader } from '@/components/admin/AdminHeader';
@@ -28,6 +29,7 @@ import { UrgentNewsManager } from '@/components/admin/UrgentNewsManager';
 import { ExamCountdownManager } from '@/components/admin/ExamCountdownManager';
 import { CmsManager } from '@/components/admin/CmsManager';
 import { QuizzesManager } from '@/components/admin/QuizzesManager';
+import { StudentsDirectory } from '@/components/admin/StudentsDirectory';
 import { RequestsManager } from '@/components/admin/RequestsManager';
 import { ThemeCharacterManager } from '@/components/admin/ThemeCharacterManager';
 import { supabase } from '@/lib/supabase';
@@ -39,6 +41,7 @@ type AdminTab =
   | 'bundles'
   | 'materials'
   | 'quizzes'
+  | 'students'
   | 'french'
   | 'themes'
   | 'cms'
@@ -64,6 +67,7 @@ export default function AdminDashboardClient() {
         'bundles',
         'materials',
         'quizzes',
+        'students',
         'french',
         'themes',
         'cms',
@@ -241,6 +245,7 @@ export default function AdminDashboardClient() {
     { id: 'covers', label: 'إدارة أغلفة المواد ومعاينة الفيديو', icon: <FolderArchive className="w-4 h-4 text-amber-400" /> },
     { id: 'materials', label: 'إدارة المحاضرات (تحديد وحذف)', count: totalMaterials, icon: <Layers className="w-4 h-4" /> },
     { id: 'quizzes', label: 'الاختبارات وبناء الأسئلة والتكريم', icon: <Award className="w-4 h-4" /> },
+    { id: 'students', label: 'سجل الطلاب والكارنيهات', icon: <Users className="w-4 h-4 text-emerald-400" /> },
     { id: 'french', label: 'القاموس الفرنسي الصوتي', icon: <BookA className="w-4 h-4" /> },
     { id: 'themes', label: 'الثيمات والشخصيات التفاعلية', icon: <Sparkles className="w-4 h-4 text-purple-400" /> },
     { id: 'cms', label: 'الـ CMS والواتساب والتواصل', icon: <Settings className="w-4 h-4" /> },
@@ -370,6 +375,10 @@ export default function AdminDashboardClient() {
               subjects={subjects}
               onRefresh={() => loadAdminData(false)}
             />
+          )}
+
+          {activeTab === 'students' && (
+            <StudentsDirectory />
           )}
 
           {activeTab === 'french' && (

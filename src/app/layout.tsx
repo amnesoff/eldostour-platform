@@ -2,6 +2,9 @@ import type { Metadata, Viewport } from 'next';
 import { Cairo } from 'next/font/google';
 import './globals.css';
 import { ThemeProvider } from '@/context/ThemeContext';
+import { StudentAuthProvider } from '@/context/StudentAuthContext';
+import { StudentAuthModal } from '@/components/auth/StudentAuthModal';
+import { StudentIdFloatingButton } from '@/components/tools/StudentIdFloatingButton';
 import { COLLEGE_NAME } from '@/lib/constants';
 
 const cairo = Cairo({
@@ -54,7 +57,11 @@ export default function RootLayout({
     <html lang="ar" dir="rtl" className={`${cairo.variable} dark`} suppressHydrationWarning>
       <body className="min-h-screen flex flex-col font-sans bg-slate-50 dark:bg-[#070c18] text-slate-900 dark:text-slate-100 antialiased selection:bg-amber-500/30 selection:text-amber-300 overflow-x-hidden">
         <ThemeProvider>
-          {children}
+          <StudentAuthProvider>
+            {children}
+            <StudentAuthModal />
+            <StudentIdFloatingButton />
+          </StudentAuthProvider>
         </ThemeProvider>
       </body>
     </html>

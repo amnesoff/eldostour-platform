@@ -16,9 +16,11 @@ import {
   Type,
   Zap,
   IdCard,
+  UserPlus,
 } from 'lucide-react';
 import { AnimatedLogo } from '@/components/ui/AnimatedLogo';
 import { useTheme } from '@/context/ThemeContext';
+import { useStudentAuth } from '@/context/StudentAuthContext';
 import { TEAM_CREDITS, LEADERSHIP_BAR_TEXT, COLLEGE_NAME } from '@/lib/constants';
 import { DigitalStudentIdCard } from '@/components/tools/DigitalStudentIdCard';
 
@@ -37,6 +39,7 @@ export function Navbar({ onOpenSearch }: NavbarProps) {
     dataSaverMode,
     toggleDataSaverMode,
   } = useTheme();
+  const { student, isGuest, openAuthModal } = useStudentAuth();
   const [showTeamModal, setShowTeamModal] = useState(false);
   const [showIdCardModal, setShowIdCardModal] = useState(false);
 
@@ -122,16 +125,30 @@ export function Navbar({ onOpenSearch }: NavbarProps) {
               )}
             </button>
 
-            {/* Digital Student ID Card Button (Feature #18) */}
-            <button
-              onClick={() => setShowIdCardModal(true)}
-              className="flex items-center justify-center gap-1 h-9 sm:h-10 px-2 sm:px-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800/80 dark:hover:bg-slate-700/80 text-slate-700 dark:text-amber-300 border border-slate-200 dark:border-slate-700/60 text-xs font-bold transition-all active:scale-95"
-              title="بطاقة الطالب الرقمية المعتمدة"
-              aria-label="كارنيه الطالب الرقمي"
-            >
-              <IdCard className="w-4 h-4 text-amber-500" />
-              <span className="hidden xl:inline">كارنيهي</span>
-            </button>
+            {/* Student Auth / Digital ID Card Quick Button */}
+            {student && !isGuest ? (
+              <button
+                onClick={() => setShowIdCardModal(true)}
+                className="flex items-center justify-center gap-1.5 h-9 sm:h-10 px-2 sm:px-2.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 dark:text-amber-400 border border-amber-500/30 text-xs font-bold transition-all active:scale-95"
+                title={`كارنيه الطالب المعتمد: ${student.full_name} (${student.student_code})`}
+                aria-label="كارنيه الطالب"
+              >
+                <IdCard className="w-4 h-4 text-amber-500" />
+                <span className="hidden xl:inline truncate max-w-[80px]">
+                  {student.full_name.split(' ')[0]}
+                </span>
+              </button>
+            ) : (
+              <button
+                onClick={openAuthModal}
+                className="flex items-center justify-center gap-1.5 h-9 sm:h-10 px-2 sm:px-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800/80 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700/60 text-xs font-bold transition-all active:scale-95"
+                title="تسجيل الدخول / إنشاء حساب طالب جديد"
+                aria-label="تسجيل الدخول"
+              >
+                <UserPlus className="w-4 h-4 text-amber-500" />
+                <span className="hidden xl:inline">تسجيل الدخول</span>
+              </button>
+            )}
 
             {/* Data Saver Mode Toggle (Feature #20) */}
             <button
