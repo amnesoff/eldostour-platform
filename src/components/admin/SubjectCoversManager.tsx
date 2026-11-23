@@ -20,6 +20,7 @@ import {
 import { AcademicYearId, Subject, Material, Quiz, SubjectCover } from '@/types';
 import { ACADEMIC_YEARS } from '@/lib/constants';
 import { supabase, uploadSubjectCoverImage, uploadSubjectPreviewVideo, deleteStorageFile } from '@/lib/supabase';
+import { adminDbMutate } from '@/lib/apiClient';
 import { formatDateArabic } from '@/lib/utils';
 
 interface SubjectCoversManagerProps {
@@ -298,19 +299,21 @@ export function SubjectCoversManager({ subjects, onRefresh }: SubjectCoversManag
       let coverId = editingCoverId;
 
       if (isEditing && editingCoverId) {
-        const { error: updErr } = await supabase
-          .from('subject_covers')
-          .update(coverPayload)
-          .eq('id', editingCoverId);
-        if (updErr) throw updErr;
+        const updRes = await adminDbMutate({
+          table: 'subject_covers',
+          mutation: 'update',
+          id: editingCoverId,
+          data: coverPayload,
+        });
+        if (!updRes.success) throw new Error(updRes.error);
       } else {
-        const { data: insData, error: insErr } = await supabase
-          .from('subject_covers')
-          .insert(coverPayload)
-          .select('id')
-          .single();
-        if (insErr) throw insErr;
-        coverId = insData.id;
+        const insRes = await adminDbMutate({
+          table: 'subject_covers',
+          mutation: 'insert',
+          data: coverPayload,
+        });
+        if (!insRes.success) throw new Error(insRes.error);
+        coverId = insRes.data?.id;
       }
 
       if (!coverId) throw new Error('فشل الحصول على معرف الغلاف');
@@ -318,11 +321,12 @@ export function SubjectCoversManager({ subjects, onRefresh }: SubjectCoversManag
       // 4. Link Selected Materials to this Cover without re-uploading!
       // Step 4a: Link checked materials
       if (selectedMaterialIds.length > 0) {
-        const { error: linkMatErr } = await supabase
-          .from('materials')
-          .update({ cover_id: coverId })
-          .in('id', selectedMaterialIds);
-        if (linkMatErr) console.warn('Link materials error:', linkMatErr);
+        await adminDbMutate({
+          table: 'materials',
+          mutation: 'update',
+          ids: selectedMaterialIds,
+          data: { cover_id: coverId },
+        });
       }
 
       // Step 4b: Unlink unchecked materials that belonged to this cover
@@ -331,19 +335,22 @@ export function SubjectCoversManager({ subjects, onRefresh }: SubjectCoversManag
         .map((m) => m.id);
 
       if (unlinkedMaterialIds.length > 0) {
-        await supabase
-          .from('materials')
-          .update({ cover_id: null })
-          .in('id', unlinkedMaterialIds);
+        await adminDbMutate({
+          table: 'materials',
+          mutation: 'update',
+          ids: unlinkedMaterialIds,
+          data: { cover_id: null },
+        });
       }
 
       // 5. Link Selected Quizzes to this Cover without re-uploading!
       if (selectedQuizIds.length > 0) {
-        const { error: linkQErr } = await supabase
-          .from('quizzes')
-          .update({ cover_id: coverId })
-          .in('id', selectedQuizIds);
-        if (linkQErr) console.warn('Link quizzes error:', linkQErr);
+        await adminDbMutate({
+          table: 'quizzes',
+          mutation: 'update',
+          ids: selectedQuizIds,
+          data: { cover_id: coverId },
+        });
       }
 
       const unlinkedQuizIds = quizzes
@@ -351,10 +358,12 @@ export function SubjectCoversManager({ subjects, onRefresh }: SubjectCoversManag
         .map((q) => q.id);
 
       if (unlinkedQuizIds.length > 0) {
-        await supabase
-          .from('quizzes')
-          .update({ cover_id: null })
-          .in('id', unlinkedQuizIds);
+        await adminDbMutate({
+          table: 'quizzes',
+          mutation: 'update',
+          ids: unlinkedQuizIds,
+          data: { cover_id: null },
+        });
       }
 
       setSuccess(
@@ -386,16 +395,20 @@ export function SubjectCoversManager({ subjects, onRefresh }: SubjectCoversManag
     }
 
     try {
-      // 1. Unlink materials & quizzes
-      await supabase
-        .from('materials')
-        .update({ cover_id: null })
-        .eq('cover_id', cover.id);
+      // 1. Unlink materials & quizzes via secure server route
+      await adminDbMutate({
+        table: 'materials',
+        mutation: 'update',
+        filter: { cover_id: cover.id },
+        data: { cover_id: null },
+      });
 
-      await supabase
-        .from('quizzes')
-        .update({ cover_id: null })
-        .eq('cover_id', cover.id);
+      await adminDbMutate({
+        table: 'quizzes',
+        mutation: 'update',
+        filter: { cover_id: cover.id },
+        data: { cover_id: null },
+      });
 
       // 2. Delete storage files if paths exist
       if (cover.cover_image_storage_path) {
@@ -405,13 +418,14 @@ export function SubjectCoversManager({ subjects, onRefresh }: SubjectCoversManag
         await deleteStorageFile(cover.preview_video_storage_path);
       }
 
-      // 3. Delete cover row
-      const { error: delErr } = await supabase
-        .from('subject_covers')
-        .delete()
-        .eq('id', cover.id);
+      // 3. Delete cover row via secure server route
+      const delRes = await adminDbMutate({
+        table: 'subject_covers',
+        mutation: 'delete',
+        id: cover.id,
+      });
 
-      if (delErr) throw delErr;
+      if (!delRes.success) throw new Error(delRes.error);
 
       setSuccess('تم حذف غلاف المادة بنجاح وإلغاء ارتباط المحتويات به.');
       loadData();

@@ -19,6 +19,7 @@ import {
 import { UrgentNewsItem } from '@/types';
 import { formatDateArabic } from '@/lib/utils';
 import { supabase, uploadNewsImage, deleteStorageFile } from '@/lib/supabase';
+import { adminDbMutate } from '@/lib/apiClient';
 import { EmptyState } from '@/components/ui/EmptyState';
 
 interface UrgentNewsManagerProps {
@@ -75,14 +76,18 @@ export function UrgentNewsManager({ news, onRefresh }: UrgentNewsManagerProps) {
         }
       }
 
-      const { error: insertError } = await supabase.from('urgent_news').insert({
-        content: content.trim(),
-        image_url: imageUrl,
-        image_storage_path: imageStoragePath,
-        is_active: true,
+      const res = await adminDbMutate({
+        table: 'urgent_news',
+        mutation: 'insert',
+        data: {
+          content: content.trim(),
+          image_url: imageUrl,
+          image_storage_path: imageStoragePath,
+          is_active: true,
+        },
       });
 
-      if (insertError) throw insertError;
+      if (!res.success) throw new Error(res.error);
 
       setSuccess('تمت إضافة الخبر العاجل والإعلان بنجاح وسيظهر فوراً في الشريط العلوي للطلاب!');
       setContent('');
@@ -100,12 +105,14 @@ export function UrgentNewsManager({ news, onRefresh }: UrgentNewsManagerProps) {
   // Toggle active status
   const handleToggleActive = async (item: UrgentNewsItem) => {
     try {
-      const { error } = await supabase
-        .from('urgent_news')
-        .update({ is_active: !item.is_active })
-        .eq('id', item.id);
+      const res = await adminDbMutate({
+        table: 'urgent_news',
+        mutation: 'update',
+        id: item.id,
+        data: { is_active: !item.is_active },
+      });
 
-      if (error) throw error;
+      if (!res.success) throw new Error(res.error);
       onRefresh();
     } catch (err: any) {
       alert(`خطأ أثناء تحديث حالة الخبر: ${err?.message || ''}`);
@@ -121,8 +128,13 @@ export function UrgentNewsManager({ news, onRefresh }: UrgentNewsManagerProps) {
         await deleteStorageFile(item.image_storage_path);
       }
 
-      const { error } = await supabase.from('urgent_news').delete().eq('id', item.id);
-      if (error) throw error;
+      const res = await adminDbMutate({
+        table: 'urgent_news',
+        mutation: 'delete',
+        id: item.id,
+      });
+
+      if (!res.success) throw new Error(res.error);
       onRefresh();
     } catch (err: any) {
       alert(`خطأ أثناء حذف الخبر: ${err?.message || ''}`);

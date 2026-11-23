@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Send, X, CheckCircle2, AlertCircle, MessageSquarePlus, Loader2 } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
+import { studentSubmitRequest } from '@/lib/apiClient';
 import { ACADEMIC_YEARS } from '@/lib/constants';
 import { AcademicYearId } from '@/types';
 
@@ -32,16 +32,15 @@ export function StudentRequestModal({ isOpen, onClose }: StudentRequestModalProp
     setError('');
 
     try {
-      const { error: insertErr } = await supabase.from('student_requests').insert({
-        student_name: studentName.trim(),
+      const res = await studentSubmitRequest({
+        studentName: studentName.trim(),
         year,
-        subject_name: subjectName.trim() || 'عام',
-        request_text: requestText.trim(),
-        contact_info: contactInfo.trim() || null,
-        status: 'pending',
+        subjectName: subjectName.trim() || 'عام',
+        requestText: requestText.trim(),
+        contactInfo: contactInfo.trim() || undefined,
       });
 
-      if (insertErr) throw insertErr;
+      if (!res.success) throw new Error(res.error || 'فشل إرسال الطلب');
 
       setSuccess(true);
       setTimeout(() => {

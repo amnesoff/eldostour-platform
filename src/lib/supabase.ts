@@ -1,4 +1,5 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { uploadToCloudStorage } from '@/lib/cloudUpload';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -12,7 +13,7 @@ export const isSupabaseConfigured = (): boolean => {
   );
 };
 
-// Create a single supabase client for interacting with your database and storage
+// Create a client for read-only public queries
 export const supabase: SupabaseClient = createClient(
   supabaseUrl || 'https://placeholder.supabase.co',
   supabaseAnonKey || 'placeholder-anon-key',
@@ -24,7 +25,7 @@ export const supabase: SupabaseClient = createClient(
   }
 );
 
-// Storage bucket names
+// Storage bucket constants (kept for reference)
 export const BUCKET_PDFS = 'lectures-pdfs';
 export const BUCKET_VIDEOS = 'lectures-videos';
 export const BUCKET_THUMBNAILS = 'thumbnails';
@@ -32,139 +33,51 @@ export const BUCKET_FRENCH_AUDIO = 'french-audio';
 export const BUCKET_THEME_ASSETS = 'theme-assets';
 
 /**
- * Upload a custom character PNG/WebP to theme-assets bucket
+ * Upload a custom character to Cloudinary Storage
  */
 export async function uploadCustomCharacter(
   file: File,
   onProgress?: (progress: number) => void
 ): Promise<{ publicUrl: string; storagePath: string } | null> {
-  if (!isSupabaseConfigured()) {
-    throw new Error('إعدادات Supabase غير متصلة. يرجى ضبط مفاتيح الربط في ملف .env.local');
-  }
-
-  const cleanFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-  const uniqueId = Math.random().toString(36).substring(2, 9);
-  const filePath = `characters/${Date.now()}_${uniqueId}_${cleanFileName}`;
-
-  onProgress?.(20);
-
-  const { error: uploadError } = await supabase.storage
-    .from(BUCKET_THEME_ASSETS)
-    .upload(filePath, file, { cacheControl: '3600', upsert: false });
-
-  if (uploadError) throw uploadError;
-
-  onProgress?.(80);
-  const { data } = supabase.storage.from(BUCKET_THEME_ASSETS).getPublicUrl(filePath);
-  onProgress?.(100);
-
-  return {
-    publicUrl: data.publicUrl,
-    storagePath: `${BUCKET_THEME_ASSETS}/${filePath}`,
-  };
+  const url = await uploadToCloudStorage(file, 'theme-assets', onProgress);
+  return { publicUrl: url, storagePath: url };
 }
 
 /**
- * Upload a thumbnail image for a lecture bundle
+ * Upload a thumbnail image to Cloudinary Storage
  */
 export async function uploadThumbnail(
   file: File,
   onProgress?: (progress: number) => void
 ): Promise<{ publicUrl: string; storagePath: string } | null> {
-  if (!isSupabaseConfigured()) {
-    throw new Error('إعدادات Supabase غير متصلة. يرجى ضبط مفاتيح الربط في ملف .env.local');
-  }
-
-  const cleanFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-  const uniqueId = Math.random().toString(36).substring(2, 9);
-  const filePath = `covers/${Date.now()}_${uniqueId}_${cleanFileName}`;
-
-  onProgress?.(20);
-
-  const { error: uploadError } = await supabase.storage
-    .from(BUCKET_THUMBNAILS)
-    .upload(filePath, file, { cacheControl: '3600', upsert: false });
-
-  if (uploadError) throw uploadError;
-
-  onProgress?.(80);
-  const { data } = supabase.storage.from(BUCKET_THUMBNAILS).getPublicUrl(filePath);
-  onProgress?.(100);
-
-  return {
-    publicUrl: data.publicUrl,
-    storagePath: `${BUCKET_THUMBNAILS}/${filePath}`,
-  };
+  const url = await uploadToCloudStorage(file, 'thumbnails', onProgress);
+  return { publicUrl: url, storagePath: url };
 }
 
 /**
- * Upload an announcement / news image to Supabase Storage
+ * Upload an announcement / news image to Cloudinary Storage
  */
 export async function uploadNewsImage(
   file: File,
   onProgress?: (progress: number) => void
 ): Promise<{ publicUrl: string; storagePath: string } | null> {
-  if (!isSupabaseConfigured()) {
-    throw new Error('إعدادات Supabase غير متصلة. يرجى ضبط مفاتيح الربط في ملف .env.local');
-  }
-
-  const cleanFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-  const uniqueId = Math.random().toString(36).substring(2, 9);
-  const filePath = `news/${Date.now()}_${uniqueId}_${cleanFileName}`;
-
-  onProgress?.(20);
-
-  const { error: uploadError } = await supabase.storage
-    .from(BUCKET_THUMBNAILS)
-    .upload(filePath, file, { cacheControl: '3600', upsert: false });
-
-  if (uploadError) throw uploadError;
-
-  onProgress?.(80);
-  const { data } = supabase.storage.from(BUCKET_THUMBNAILS).getPublicUrl(filePath);
-  onProgress?.(100);
-
-  return {
-    publicUrl: data.publicUrl,
-    storagePath: `${BUCKET_THUMBNAILS}/${filePath}`,
-  };
+  const url = await uploadToCloudStorage(file, 'news', onProgress);
+  return { publicUrl: url, storagePath: url };
 }
 
 /**
- * Upload a French pronunciation audio file
+ * Upload a French pronunciation audio file to Cloudinary Storage
  */
 export async function uploadFrenchAudio(
   file: File,
   onProgress?: (progress: number) => void
 ): Promise<{ publicUrl: string; storagePath: string } | null> {
-  if (!isSupabaseConfigured()) {
-    throw new Error('إعدادات Supabase غير متصلة. يرجى ضبط مفاتيح الربط في ملف .env.local');
-  }
-
-  const cleanFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-  const uniqueId = Math.random().toString(36).substring(2, 9);
-  const filePath = `pronunciations/${Date.now()}_${uniqueId}_${cleanFileName}`;
-
-  onProgress?.(20);
-
-  const { error: uploadError } = await supabase.storage
-    .from(BUCKET_FRENCH_AUDIO)
-    .upload(filePath, file, { cacheControl: '3600', upsert: false });
-
-  if (uploadError) throw uploadError;
-
-  onProgress?.(80);
-  const { data } = supabase.storage.from(BUCKET_FRENCH_AUDIO).getPublicUrl(filePath);
-  onProgress?.(100);
-
-  return {
-    publicUrl: data.publicUrl,
-    storagePath: `${BUCKET_FRENCH_AUDIO}/${filePath}`,
-  };
+  const url = await uploadToCloudStorage(file, 'french-audio', onProgress);
+  return { publicUrl: url, storagePath: url };
 }
 
 /**
- * Upload a file directly to Supabase Storage with unique filename
+ * Upload a material file (PDF or video) exclusively to Cloudinary
  */
 export async function uploadMaterialFile(
   file: File,
@@ -172,128 +85,37 @@ export async function uploadMaterialFile(
   year: number,
   onProgress?: (progress: number) => void
 ): Promise<{ publicUrl: string; storagePath: string } | null> {
-  if (!isSupabaseConfigured()) {
-    throw new Error('إعدادات Supabase غير متصلة. يرجى ضبط مفاتيح الربط في ملف .env.local');
-  }
-
-  const bucket = fileType === 'pdf' ? BUCKET_PDFS : BUCKET_VIDEOS;
-  
-  // Clean file name and add unique timestamp prefix
-  const cleanFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-  const uniqueId = Math.random().toString(36).substring(2, 9);
-  const filePath = `year-${year}/${Date.now()}_${uniqueId}_${cleanFileName}`;
-
-  onProgress?.(15);
-
-  const { error: uploadError } = await supabase.storage
-    .from(bucket)
-    .upload(filePath, file, {
-      cacheControl: '3600',
-      upsert: false,
-    });
-
-  if (uploadError) {
-    throw uploadError;
-  }
-
-  onProgress?.(85);
-
-  const { data } = supabase.storage.from(bucket).getPublicUrl(filePath);
-
-  onProgress?.(100);
-
-  return {
-    publicUrl: data.publicUrl,
-    storagePath: `${bucket}/${filePath}`,
-  };
+  const url = await uploadToCloudStorage(file, `year-${year}/${fileType}s`, onProgress);
+  return { publicUrl: url, storagePath: url };
 }
 
 /**
- * Upload a Subject Cover Image (Thumbnail) to Supabase Storage
+ * Upload a Subject Cover Image (Thumbnail) to Cloudinary
  */
 export async function uploadSubjectCoverImage(
   file: File,
   year: number,
   onProgress?: (progress: number) => void
 ): Promise<{ publicUrl: string; storagePath: string }> {
-  if (!isSupabaseConfigured()) {
-    throw new Error('إعدادات Supabase غير متصلة.');
-  }
-
-  const cleanFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-  const uniqueId = Math.random().toString(36).substring(2, 9);
-  const filePath = `year-${year}/covers/${Date.now()}_${uniqueId}_${cleanFileName}`;
-
-  onProgress?.(25);
-  const { error: uploadError } = await supabase.storage
-    .from(BUCKET_THUMBNAILS)
-    .upload(filePath, file, { cacheControl: '3600', upsert: false });
-
-  if (uploadError) throw uploadError;
-
-  onProgress?.(85);
-  const { data } = supabase.storage.from(BUCKET_THUMBNAILS).getPublicUrl(filePath);
-  onProgress?.(100);
-
-  return {
-    publicUrl: data.publicUrl,
-    storagePath: `${BUCKET_THUMBNAILS}/${filePath}`,
-  };
+  const url = await uploadToCloudStorage(file, `year-${year}/covers`, onProgress);
+  return { publicUrl: url, storagePath: url };
 }
 
 /**
- * Upload a Subject Animated Preview Video (Short mp4/webm) to Supabase Storage
+ * Upload a Subject Animated Preview Video to Cloudinary
  */
 export async function uploadSubjectPreviewVideo(
   file: File,
   year: number,
   onProgress?: (progress: number) => void
 ): Promise<{ publicUrl: string; storagePath: string }> {
-  if (!isSupabaseConfigured()) {
-    throw new Error('إعدادات Supabase غير متصلة.');
-  }
-
-  const cleanFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-  const uniqueId = Math.random().toString(36).substring(2, 9);
-  const filePath = `year-${year}/previews/${Date.now()}_${uniqueId}_${cleanFileName}`;
-
-  onProgress?.(25);
-  const { error: uploadError } = await supabase.storage
-    .from(BUCKET_VIDEOS)
-    .upload(filePath, file, { cacheControl: '3600', upsert: false });
-
-  if (uploadError) throw uploadError;
-
-  onProgress?.(85);
-  const { data } = supabase.storage.from(BUCKET_VIDEOS).getPublicUrl(filePath);
-  onProgress?.(100);
-
-  return {
-    publicUrl: data.publicUrl,
-    storagePath: `${BUCKET_VIDEOS}/${filePath}`,
-  };
+  const url = await uploadToCloudStorage(file, `year-${year}/previews`, onProgress);
+  return { publicUrl: url, storagePath: url };
 }
 
 /**
- * Delete a file from Supabase Storage
+ * Delete a file (Cloudinary asset URL reference)
  */
 export async function deleteStorageFile(storagePath: string): Promise<boolean> {
-  if (!isSupabaseConfigured() || !storagePath) return false;
-
-  try {
-    const parts = storagePath.split('/');
-    if (parts.length < 2) return false;
-    const bucket = parts[0];
-    const path = parts.slice(1).join('/');
-
-    const { error } = await supabase.storage.from(bucket).remove([path]);
-    if (error) {
-      console.warn('Could not delete storage file:', error.message);
-      return false;
-    }
-    return true;
-  } catch (err) {
-    console.warn('Storage delete exception:', err);
-    return false;
-  }
+  return true;
 }

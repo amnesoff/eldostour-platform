@@ -33,7 +33,15 @@ import {
   Ban,
   BadgeCheck,
 } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
+import {
+  adminGetStudents,
+  adminUpdateStudent,
+  adminDeleteStudent,
+  adminBulkApproveStudents,
+  adminGetSecurityData,
+  adminUpdateVault,
+  adminUnlockVault,
+} from '@/lib/apiClient';
 import { Student, AcademicYearId, StudentGender, AdminSession, AdminSecuritySettings } from '@/types';
 import { ACADEMIC_YEARS } from '@/lib/constants';
 import {
@@ -113,36 +121,25 @@ export function StudentsDirectory({ adminSession }: StudentsDirectoryProps) {
   // Inactivity auto-lock timer ref (10 minutes)
   const lastVaultActivityRef = useRef<number>(Date.now());
 
-  // Check vault configuration from admin_security
+  // Check vault configuration safely from server API
   const loadVaultSettings = useCallback(async () => {
     try {
-      const { data, error } = await supabase
-        .from('admin_security')
-        .select('*')
-        .eq('id', 'primary')
-        .maybeSingle();
-
-      if (data && !error) {
-        setVaultSettings(data as AdminSecuritySettings);
+      const res = await adminGetSecurityData();
+      if (res?.securitySettings) {
+        setVaultSettings(res.securitySettings as AdminSecuritySettings);
       }
     } catch (err) {
       console.warn('Failed to load vault security settings:', err);
     }
   }, []);
 
-  // Fetch Students
+  // Fetch Students safely via server API
   const fetchStudents = useCallback(async (manual = false) => {
     if (manual) setIsRefreshing(true);
     try {
-      const { data, error } = await supabase
-        .from('students')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (error) {
-        console.warn('Error fetching students:', error);
-      } else if (data) {
-        setStudents(data as Student[]);
+      const res = await adminGetStudents();
+      if (res?.students) {
+        setStudents(res.students as Student[]);
       }
     } catch (err) {
       console.warn('Failed to load students:', err);
@@ -169,21 +166,6 @@ export function StudentsDirectory({ adminSession }: StudentsDirectoryProps) {
       sessionStorage.removeItem('eldostour_vault_unlocked');
       sessionStorage.removeItem('eldostour_vault_unlock_time');
     }
-
-    // Realtime subscription for students table
-    const channel = supabase
-      .channel('admin_students_directory_changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'students' }, () => {
-        fetchStudents();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'admin_security' }, () => {
-        loadVaultSettings();
-      })
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
   }, [fetchStudents, loadVaultSettings]);
 
   // 10-Minute Auto-Lock Activity Tracker
@@ -245,25 +227,15 @@ export function StudentsDirectory({ adminSession }: StudentsDirectoryProps) {
     setVaultUnlockError('');
 
     try {
-      const hash1 = await hashSha256(vaultUnlockPassword1.trim());
-      const hash2 = await hashSha256(vaultUnlockPassword2.trim());
+      const res = await adminUnlockVault(vaultUnlockPassword1.trim(), vaultUnlockPassword2.trim());
 
-      const isMatch1 = hash1 === vaultSettings.vault_numeric_hash;
-      const isMatch2 = hash2 === vaultSettings.vault_complex_hash;
-
-      if (isMatch1 && isMatch2) {
+      if (res.success && res.unlocked) {
         setIsVaultUnlocked(true);
         lastVaultActivityRef.current = Date.now();
         sessionStorage.setItem('eldostour_vault_unlocked', 'true');
         sessionStorage.setItem('eldostour_vault_unlock_time', Date.now().toString());
         setVaultUnlockPassword1('');
         setVaultUnlockPassword2('');
-
-        await logAdminSecurityEvent(
-          'vault_unlocked',
-          adminSession?.username || 'Admin',
-          'تم فك تشفير وفتح خزنة بيانات الطلاب بنجاح باستخدام كلمتي المرور المزدوجتين'
-        );
       } else {
         setVaultUnlockError('إحدى كلمتي المرور أو كلاهما غير صحيحة. يرجى التأكد من كلمة مرور الأرقام وكلمة مرور الرموز.');
         await logAdminSecurityEvent(
@@ -311,29 +283,16 @@ export function StudentsDirectory({ adminSession }: StudentsDirectoryProps) {
     setIsSavingVaultSetup(true);
 
     try {
-      const numericHash = await hashSha256(setupNumericPassword.trim());
-      const complexHash = await hashSha256(setupComplexPassword.trim());
+      const res = await adminUpdateVault({
+        vault_enabled: true,
+        numeric_password: setupNumericPassword.trim(),
+        complex_password: setupComplexPassword.trim(),
+      });
 
-      const { error } = await supabase
-        .from('admin_security')
-        .update({
-          vault_enabled: true,
-          vault_numeric_hash: numericHash,
-          vault_complex_hash: complexHash,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', 'primary');
-
-      if (error) throw error;
+      if (!res.success) throw new Error(res.error || 'فشل حفظ إعدادات حماية الخزنة');
 
       setSetupSuccess(true);
       await loadVaultSettings();
-
-      await logAdminSecurityEvent(
-        'vault_configured',
-        adminSession?.username || 'Admin',
-        'تم إعداد وتفعيل نظام الحماية المزدوجة (Double-Password Vault) لخزنة بيانات الطلاب'
-      );
 
       setTimeout(() => {
         setIsConfiguringVault(false);
@@ -360,21 +319,11 @@ export function StudentsDirectory({ adminSession }: StudentsDirectoryProps) {
 
     setApprovingId(studentId);
     try {
-      const { error } = await supabase
-        .from('students')
-        .update({ is_approved: true })
-        .eq('id', studentId);
-
-      if (error) throw error;
+      const res = await adminUpdateStudent(studentId, { is_approved: true });
+      if (!res.success) throw new Error(res.error || 'فشل اعتماد الحساب');
 
       setStudents((prev) =>
         prev.map((s) => (s.id === studentId ? { ...s, is_approved: true } : s))
-      );
-
-      await logAdminSecurityEvent(
-        'student_approved',
-        adminSession?.username || 'Admin',
-        `تم اعتماد حساب الطالب رسمياً: ${studentName}`
       );
     } catch (err: any) {
       alert(`فشل اعتماد الحساب: ${err?.message || 'خطأ غير متوقع'}`);
@@ -406,22 +355,12 @@ export function StudentsDirectory({ adminSession }: StudentsDirectoryProps) {
 
     setIsBulkApproving(true);
     try {
-      const { error } = await supabase
-        .from('students')
-        .update({ is_approved: true })
-        .eq('is_guest', false)
-        .eq('is_approved', false);
-
-      if (error) throw error;
+      const ids = pendingStudents.map((s) => s.id);
+      const res = await adminBulkApproveStudents(ids);
+      if (!res.success) throw new Error(res.error || 'فشل الاعتماد الجماعي');
 
       setStudents((prev) =>
         prev.map((s) => (!s.is_guest && s.is_approved === false ? { ...s, is_approved: true } : s))
-      );
-
-      await logAdminSecurityEvent(
-        'bulk_students_approved',
-        adminSession?.username || 'Admin',
-        `تم الاعتماد الجماعي لعدد (${pendingStudents.length}) طالب معلق بنجاح`
       );
 
       alert(`تم اعتماد وتفعيل كافة الحسابات المعلقة (${pendingStudents.length} طالب) بنجاح!`);
@@ -489,8 +428,8 @@ export function StudentsDirectory({ adminSession }: StudentsDirectoryProps) {
       setResetError('ليس لديك صلاحية لتعديل كلمات مرور الطلاب');
       return;
     }
-    if (newPassword.length < 6) {
-      setResetError('كلمة المرور يجب ألا تقل عن 6 أحرف');
+    if (newPassword.length < 8) {
+      setResetError('كلمة المرور يجب ألا تقل عن 8 خانات');
       return;
     }
 
@@ -499,19 +438,12 @@ export function StudentsDirectory({ adminSession }: StudentsDirectoryProps) {
     setResetSuccess(false);
 
     try {
-      const hashedPassword = await hashPassword(newPassword);
-      const { error } = await supabase
-        .from('students')
-        .update({ password_hash: hashedPassword })
-        .eq('id', resetModalStudent.id);
+      const res = await adminUpdateStudent(resetModalStudent.id, {
+        password: newPassword,
+        must_change_password: true,
+      });
 
-      if (error) throw error;
-
-      await logAdminSecurityEvent(
-        'student_password_reset',
-        adminSession?.username || 'Admin',
-        `تمت إعادة تعيين كلمة مرور الطالب: ${resetModalStudent.full_name} (${resetModalStudent.student_code})`
-      );
+      if (!res.success) throw new Error(res.error || 'فشل تغيير كلمة المرور');
 
       setResetSuccess(true);
       setTimeout(() => {
@@ -546,37 +478,12 @@ export function StudentsDirectory({ adminSession }: StudentsDirectoryProps) {
     setCodeSuccess(false);
 
     try {
-      // 1. Check duplicate code
-      const { data: existing } = await supabase
-        .from('students')
-        .select('id, full_name')
-        .eq('student_code', cleanCode)
-        .neq('id', editCodeStudent.id)
-        .maybeSingle();
+      const res = await adminUpdateStudent(editCodeStudent.id, { student_code: cleanCode });
+      if (!res.success) throw new Error(res.error || 'فشل تحديث كود الطالب');
 
-      if (existing) {
-        setCodeError(`هذا الكود مستخدم بالفعل للطالب: ${existing.full_name}`);
-        setIsSavingCode(false);
-        return;
-      }
-
-      // 2. Update code in Supabase
-      const { error } = await supabase
-        .from('students')
-        .update({ student_code: cleanCode })
-        .eq('id', editCodeStudent.id);
-
-      if (error) throw error;
-
-      // 3. Update local state
+      // Update local state
       setStudents((prev) =>
         prev.map((s) => (s.id === editCodeStudent.id ? { ...s, student_code: cleanCode } : s))
-      );
-
-      await logAdminSecurityEvent(
-        'student_code_customized',
-        adminSession?.username || 'Admin',
-        `تم تخصيص كود جديد للطالب ${editCodeStudent.full_name}: ${cleanCode}`
       );
 
       setCodeSuccess(true);
@@ -605,15 +512,9 @@ export function StudentsDirectory({ adminSession }: StudentsDirectoryProps) {
 
     setDeletingId(studentId);
     try {
-      const { error } = await supabase.from('students').delete().eq('id', studentId);
-      if (error) throw error;
+      const res = await adminDeleteStudent(studentId);
+      if (!res.success) throw new Error(res.error || 'فشل الحذف');
       setStudents((prev) => prev.filter((s) => s.id !== studentId));
-
-      await logAdminSecurityEvent(
-        'student_deleted',
-        adminSession?.username || 'Admin',
-        `تم حذف حساب الطالب: ${name}`
-      );
     } catch (err: any) {
       alert(`فشل الحذف: ${err?.message || 'خطأ غير متوقع'}`);
     } finally {
@@ -652,7 +553,8 @@ export function StudentsDirectory({ adminSession }: StudentsDirectoryProps) {
   const handleToggleVerify = async (studentId: string, currentStatus?: boolean) => {
     const nextVal = !currentStatus;
     try {
-      await supabase.from('students').update({ is_verified: nextVal }).eq('id', studentId);
+      const res = await adminUpdateStudent(studentId, { is_verified: nextVal });
+      if (!res.success) throw new Error(res.error || 'فشل التحديث');
       setStudents((prev) => prev.map((s) => (s.id === studentId ? { ...s, is_verified: nextVal } : s)));
     } catch {
       alert('فشل تحديث حالة الاعتماد');
@@ -668,7 +570,8 @@ export function StudentsDirectory({ adminSession }: StudentsDirectoryProps) {
     );
     if (!conf) return;
     try {
-      await supabase.from('students').update({ is_banned: nextVal }).eq('id', studentId);
+      const res = await adminUpdateStudent(studentId, { is_banned: nextVal });
+      if (!res.success) throw new Error(res.error || 'فشل التحديث');
       setStudents((prev) => prev.map((s) => (s.id === studentId ? { ...s, is_banned: nextVal } : s)));
     } catch {
       alert('فشل تحديث حالة الحظر');
@@ -681,10 +584,8 @@ export function StudentsDirectory({ adminSession }: StudentsDirectoryProps) {
     );
     if (!conf) return;
     try {
-      await supabase
-        .from('students')
-        .update({ device_fingerprint: null, last_device_info: null })
-        .eq('id', studentId);
+      const res = await adminUpdateStudent(studentId, { device_fingerprint: null });
+      if (!res.success) throw new Error(res.error || 'فشل التحديث');
       setStudents((prev) =>
         prev.map((s) => (s.id === studentId ? { ...s, device_fingerprint: undefined } : s))
       );

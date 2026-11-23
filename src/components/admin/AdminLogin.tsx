@@ -17,9 +17,9 @@ import {
   LifeBuoy,
 } from 'lucide-react';
 import { Logo } from '@/components/ui/Logo';
-import { supabase } from '@/lib/supabase';
-import { hashSha256, logAdminSecurityEvent } from '@/lib/authUtils';
-import { AdminSession, SubAdminUser } from '@/types';
+import { adminLoginCredentials, adminVerifyPin, adminRecoveryLogin } from '@/lib/apiClient';
+import { logAdminSecurityEvent } from '@/lib/authUtils';
+import { AdminSession } from '@/types';
 
 interface AdminLoginProps {
   onSuccess: () => void;
@@ -47,9 +47,6 @@ export function AdminLogin({ onSuccess, gateType = 'super_admin' }: AdminLoginPr
   const [pendingAdmin, setPendingAdmin] = useState<{
     username: string;
     is_super_admin: boolean;
-    pin_hash: string;
-    session_version: number;
-    subAdminData?: SubAdminUser;
   } | null>(null);
 
   // Check lockout on mount and tick
@@ -96,85 +93,17 @@ export function AdminLogin({ onSuccess, gateType = 'super_admin' }: AdminLoginPr
 
     try {
       const cleanUsername = username.trim();
-      const enteredPasswordHash = await hashSha256(password.trim());
+      const res = await adminLoginCredentials(cleanUsername, password, gateType);
 
-      // 1. Fetch Super Admin record
-      const { data: securityRow } = await supabase
-        .from('admin_security')
-        .select('*')
-        .eq('id', 'primary')
-        .maybeSingle();
-
-      const defaultSuperUsername = securityRow?.admin_username || 'Dr. Mazen 2006';
-      const defaultSuperPasswordHash =
-        securityRow?.password_hash || 'b33b653a50da45bba3409e563f479875fc2e3a379d8a478bd515f5594de12200';
-      const defaultSuperPinHash =
-        securityRow?.pin_hash || '588505a0785bab576624a7783e03236d3858987ca0a59b5ce340c6c5e808e5bf';
-
-      const isSuperUserMatch =
-        cleanUsername.toLowerCase() === defaultSuperUsername.toLowerCase();
-
-      // Gate check enforcement
-      if (gateType === 'staff' && isSuperUserMatch) {
-        await recordFailedAttempt(cleanUsername, 'هذه البوابة مخصصة للمشرفين الفرعيين فقط. يرجى الدخول من بوابة الإدارة المركزية.');
-        setLoading(false);
-        return;
+      if (res.success && res.step === 'pin') {
+        setPendingAdmin({
+          username: res.username,
+          is_super_admin: Boolean(res.is_super_admin),
+        });
+        setStep('pin');
+      } else {
+        await recordFailedAttempt(cleanUsername, res.error || 'اسم المستخدم أو كلمة المرور غير صحيحة');
       }
-
-      if (gateType === 'super_admin' && !isSuperUserMatch) {
-        // In Super Admin gate, refuse sub-admin logins
-        await recordFailedAttempt(cleanUsername, 'هذه البوابة مخصصة للإدارة المركزية فقط.');
-        setLoading(false);
-        return;
-      }
-
-      // 1. Super Admin Login Attempt
-      if (isSuperUserMatch) {
-        if (enteredPasswordHash === defaultSuperPasswordHash) {
-          setPendingAdmin({
-            username: defaultSuperUsername,
-            is_super_admin: true,
-            pin_hash: defaultSuperPinHash,
-            session_version: securityRow?.session_version || 1,
-          });
-          setStep('pin');
-          setLoading(false);
-          return;
-        } else {
-          await recordFailedAttempt(cleanUsername, 'كلمة المرور غير صحيحة');
-          setLoading(false);
-          return;
-        }
-      }
-
-      // 2. Sub-Admin Login Attempt
-      const { data: subAdmin, error: subError } = await supabase
-        .from('admin_users')
-        .select('*')
-        .ilike('username', cleanUsername)
-        .maybeSingle();
-
-      if (subAdmin && !subError) {
-        if (enteredPasswordHash === subAdmin.password_hash) {
-          setPendingAdmin({
-            username: subAdmin.username,
-            is_super_admin: false,
-            pin_hash: subAdmin.pin_hash,
-            session_version: 1,
-            subAdminData: subAdmin as SubAdminUser,
-          });
-          setStep('pin');
-          setLoading(false);
-          return;
-        } else {
-          await recordFailedAttempt(cleanUsername, 'كلمة مرور المشرف غير صحيحة');
-          setLoading(false);
-          return;
-        }
-      }
-
-      // Neither matched
-      await recordFailedAttempt(cleanUsername, 'اسم المستخدم أو كلمة المرور غير صحيحة');
     } catch (err: any) {
       console.warn('Admin login error:', err);
       setError('حدث خطأ أثناء الاتصال بالخادم الأمني، يرجى إعادة المحاولة');
@@ -200,65 +129,21 @@ export function AdminLogin({ onSuccess, gateType = 'super_admin' }: AdminLoginPr
         return;
       }
 
-      const { data: securityRow } = await supabase
-        .from('admin_security')
-        .select('*')
-        .eq('id', 'primary')
-        .maybeSingle();
+      const res = await adminRecoveryLogin(cleanUsername, cleanCode);
 
-      const defaultSuperUsername = securityRow?.admin_username || 'Dr. Mazen 2006';
-      if (cleanUsername.toLowerCase() !== defaultSuperUsername.toLowerCase()) {
-        await recordFailedAttempt(cleanUsername, 'كود الاسترداد مخصص للمشرف العام فقط');
-        setLoading(false);
-        return;
-      }
-
-      const enteredCodeHash = await hashSha256(cleanCode);
-      const existingHashes: string[] = Array.isArray(securityRow?.recovery_code_hashes)
-        ? securityRow.recovery_code_hashes
-        : [];
-
-      if (existingHashes.includes(enteredCodeHash)) {
-        // Valid one-time code! Consume it immediately
-        const remainingHashes = existingHashes.filter((h) => h !== enteredCodeHash);
-        await supabase
-          .from('admin_security')
-          .update({
-            recovery_code_hashes: remainingHashes,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', 'primary');
-
+      if (res.success && res.session) {
         // Clear lockouts
         localStorage.removeItem('eldostour_admin_failed_attempts');
         localStorage.removeItem('eldostour_admin_locked_until');
 
-        const sessionPayload: AdminSession = {
-          username: defaultSuperUsername,
-          is_super_admin: true,
-          session_version: securityRow?.session_version || 1,
-          permissions: {
-            can_manage_students: true,
-            can_manage_content: true,
-            can_delete_content: true,
-            can_access_student_vault: true,
-          },
-        };
-
         sessionStorage.setItem('eldostour_admin_auth', 'authenticated');
-        sessionStorage.setItem('eldostour_admin_session', JSON.stringify(sessionPayload));
+        sessionStorage.setItem('eldostour_admin_session', JSON.stringify(res.session));
         sessionStorage.setItem('eldostour_admin_login_time', Date.now().toString());
         sessionStorage.setItem('eldostour_admin_last_activity', Date.now().toString());
 
-        await logAdminSecurityEvent(
-          'successful_login',
-          defaultSuperUsername,
-          'تم الدخول بنجاح عبر كود الاسترداد الرئيسي للطوارئ (One-Time Recovery Code) وتم استهلاك الكود'
-        );
-
         onSuccess();
       } else {
-        await recordFailedAttempt(cleanUsername, 'كود الاسترداد غير صحيح أو تم استخدامه مسبقاً');
+        await recordFailedAttempt(cleanUsername, res.error || 'كود الاسترداد غير صحيح أو تم استخدامه مسبقاً');
       }
     } catch (err: any) {
       console.warn('Recovery error:', err);
@@ -299,46 +184,21 @@ export function AdminLogin({ onSuccess, gateType = 'super_admin' }: AdminLoginPr
     setError('');
 
     try {
-      const enteredPinHash = await hashSha256(enteredPin);
+      const res = await adminVerifyPin(pendingAdmin.username, enteredPin, pendingAdmin.is_super_admin);
 
-      if (enteredPinHash === pendingAdmin.pin_hash) {
-        // Success! Clear failed attempts
+      if (res.success && res.session) {
+        // Clear failed attempts
         localStorage.removeItem('eldostour_admin_failed_attempts');
         localStorage.removeItem('eldostour_admin_locked_until');
 
-        const sessionPayload: AdminSession = {
-          username: pendingAdmin.username,
-          is_super_admin: pendingAdmin.is_super_admin,
-          session_version: pendingAdmin.session_version,
-          permissions: pendingAdmin.is_super_admin
-            ? {
-                can_manage_students: true,
-                can_manage_content: true,
-                can_delete_content: true,
-                can_access_student_vault: true,
-              }
-            : {
-                can_manage_students: pendingAdmin.subAdminData?.can_manage_students || false,
-                can_manage_content: pendingAdmin.subAdminData?.can_manage_content || true,
-                can_delete_content: pendingAdmin.subAdminData?.can_delete_content || false,
-                can_access_student_vault: pendingAdmin.subAdminData?.can_access_student_vault || false,
-              },
-        };
-
         sessionStorage.setItem('eldostour_admin_auth', 'authenticated');
-        sessionStorage.setItem('eldostour_admin_session', JSON.stringify(sessionPayload));
+        sessionStorage.setItem('eldostour_admin_session', JSON.stringify(res.session));
         sessionStorage.setItem('eldostour_admin_login_time', Date.now().toString());
         sessionStorage.setItem('eldostour_admin_last_activity', Date.now().toString());
 
-        await logAdminSecurityEvent(
-          'successful_login',
-          pendingAdmin.username,
-          `تم تسجيل دخول ناجح متعدد العوامل (${pendingAdmin.is_super_admin ? 'مشرف عام' : 'مشرف فرعي'})`
-        );
-
         onSuccess();
       } else {
-        await recordFailedAttempt(pendingAdmin.username, 'رمز الأمان السداسي (PIN) غير صحيح');
+        await recordFailedAttempt(pendingAdmin.username, res.error || 'رمز الأمان السداسي (PIN) غير صحيح');
       }
     } catch (err: any) {
       console.warn('PIN validation error:', err);

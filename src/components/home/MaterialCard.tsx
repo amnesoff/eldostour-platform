@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import { Material } from '@/types';
 import { isNewItem, formatDateArabic, formatFileSize } from '@/lib/utils';
-import { supabase } from '@/lib/supabase';
+import { studentLikeMaterial } from '@/lib/apiClient';
 import { downloadDirectWatermarkedPdf } from '@/lib/pdfWatermark';
 
 interface MaterialCardProps {
@@ -73,18 +73,7 @@ export function MaterialCard({
         localStorage.setItem('eldostour_liked_materials', JSON.stringify(ids));
       }
 
-      // Supabase RPC call or direct update
-      const { error: rpcError } = await supabase.rpc('increment_likes', {
-        material_id: material.id,
-      });
-
-      if (rpcError) {
-        // Fallback direct update if RPC is missing
-        await supabase
-          .from('materials')
-          .update({ likes_count: likes + 1 })
-          .eq('id', material.id);
-      }
+      await studentLikeMaterial(material.id);
     } catch (err) {
       console.warn('Like increment exception:', err);
     } finally {

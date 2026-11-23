@@ -14,6 +14,7 @@ import {
 import { FrenchTermRecord, AcademicYearId } from '@/types';
 import { ACADEMIC_YEARS } from '@/lib/constants';
 import { supabase, uploadFrenchAudio } from '@/lib/supabase';
+import { adminDbMutate } from '@/lib/apiClient';
 
 export function FrenchTermsManager() {
   const [terms, setTerms] = useState<FrenchTermRecord[]>([]);
@@ -91,18 +92,22 @@ export function FrenchTermsManager() {
         }
       }
 
-      const { error: insErr } = await supabase.from('french_terms').insert({
-        french: french.trim(),
-        arabic: arabic.trim(),
-        year,
-        category: category.trim(),
-        pronunciation_hint: pronunciationHint.trim(),
-        example: example.trim(),
-        audio_url: finalAudioUrl,
-        audio_storage_path: finalAudioPath,
+      const res = await adminDbMutate({
+        table: 'french_terms',
+        mutation: 'insert',
+        data: {
+          french: french.trim(),
+          arabic: arabic.trim(),
+          year,
+          category: category.trim(),
+          pronunciation_hint: pronunciationHint.trim(),
+          example: example.trim(),
+          audio_url: finalAudioUrl,
+          audio_storage_path: finalAudioPath,
+        },
       });
 
-      if (insErr) throw insErr;
+      if (!res.success) throw new Error(res.error || 'فشل حفظ المصطلح');
 
       setSuccess('تمت إضافة المصطلح الصوتي بنجاح!');
       setFrench('');
@@ -122,7 +127,7 @@ export function FrenchTermsManager() {
   const handleDeleteTerm = async (id: string) => {
     if (!confirm('هل أنت متأكد من حذف هذا المصطلح؟')) return;
     try {
-      await supabase.from('french_terms').delete().eq('id', id);
+      await adminDbMutate({ table: 'french_terms', mutation: 'delete', id });
       loadTerms();
     } catch (err: any) {
       alert(`خطأ: ${err?.message || ''}`);

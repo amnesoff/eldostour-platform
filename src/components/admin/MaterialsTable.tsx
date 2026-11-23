@@ -21,7 +21,8 @@ import {
 import { Material, Subject, MaterialType } from '@/types';
 import { ACADEMIC_YEARS } from '@/lib/constants';
 import { formatDateArabic, formatFileSize } from '@/lib/utils';
-import { supabase, deleteStorageFile } from '@/lib/supabase';
+import { deleteStorageFile } from '@/lib/supabase';
+import { adminDbMutate } from '@/lib/apiClient';
 import { EmptyState } from '@/components/ui/EmptyState';
 
 interface MaterialsTableProps {
@@ -101,13 +102,14 @@ export function MaterialsTable({
         }
       }
 
-      // 2. Atomic delete from database
-      const { error } = await supabase
-        .from('materials')
-        .delete()
-        .in('id', selectedIds);
+      // 2. Atomic delete from database via secure server route
+      const res = await adminDbMutate({
+        table: 'materials',
+        mutation: 'delete',
+        ids: selectedIds,
+      });
 
-      if (error) throw error;
+      if (!res.success) throw new Error(res.error);
 
       setSelectedIds([]);
       setShowBulkDeleteModal(false);
@@ -158,17 +160,19 @@ export function MaterialsTable({
     setIsSavingEdit(true);
 
     try {
-      const { error } = await supabase
-        .from('materials')
-        .update({
+      const res = await adminDbMutate({
+        table: 'materials',
+        mutation: 'update',
+        id: editingItem.id,
+        data: {
           title: editTitle.trim(),
           description: editDesc.trim(),
           subject_id: editSubjectId,
           is_cram: editIsCram,
-        })
-        .eq('id', editingItem.id);
+        },
+      });
 
-      if (error) throw error;
+      if (!res.success) throw new Error(res.error);
 
       setEditingItem(null);
       onRefresh();
@@ -189,12 +193,13 @@ export function MaterialsTable({
         await deleteStorageFile(deletingItem.storage_path);
       }
 
-      const { error } = await supabase
-        .from('materials')
-        .delete()
-        .eq('id', deletingItem.id);
+      const res = await adminDbMutate({
+        table: 'materials',
+        mutation: 'delete',
+        id: deletingItem.id,
+      });
 
-      if (error) throw error;
+      if (!res.success) throw new Error(res.error);
 
       setDeletingItem(null);
       onRefresh();

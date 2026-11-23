@@ -26,7 +26,8 @@ import { useStudentAuth } from '@/context/StudentAuthContext';
 import { AcademicYearId, StudentGender, StudyType } from '@/types';
 import { ACADEMIC_YEARS, COLLEGE_NAME, PLATFORM_NAME } from '@/lib/constants';
 import { compressImageFile, isReservedName, normalizeArabicText, validateEgyptianPhone, validateStudentName } from '@/lib/authUtils';
-import { supabase } from '@/lib/supabase';
+import { studentFetchPublicConfig } from '@/lib/apiClient';
+import { uploadToCloudStorage } from '@/lib/cloudUpload';
 import { LegalContractModal } from '@/components/legal/LegalContractModal';
 
 export function StudentAuthModal() {
@@ -68,18 +69,13 @@ export function StudentAuthModal() {
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [isContractOpen, setIsContractOpen] = useState(false);
 
-  // Fetch dynamic whatsapp approval number from admin_security
+  // Fetch dynamic whatsapp approval number safely from server config
   useEffect(() => {
-    supabase
-      .from('admin_security')
-      .select('whatsapp_approval_number')
-      .eq('id', 'primary')
-      .maybeSingle()
-      .then(({ data }) => {
-        if (data?.whatsapp_approval_number) {
-          setApprovalWhatsApp(data.whatsapp_approval_number);
-        }
-      });
+    studentFetchPublicConfig().then((cfg) => {
+      if (cfg?.whatsapp_approval_number) {
+        setApprovalWhatsApp(cfg.whatsapp_approval_number);
+      }
+    }).catch(() => {});
   }, []);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -148,8 +144,8 @@ export function StudentAuthModal() {
       return;
     }
 
-    if (password.length < 6) {
-      setError('كلمة المرور يجب ألا تقل عن 6 أحرف');
+    if (password.length < 8) {
+      setError('كلمة المرور يجب ألا تقل عن 8 خانات وتحتوي على أحرف وأرقام');
       return;
     }
 
@@ -159,47 +155,7 @@ export function StudentAuthModal() {
       const cleanEmail = email.trim().toLowerCase();
       const cleanPhone = phone.trim().replace(/[\s-]/g, '');
 
-      // 4. Check duplicate email in Supabase
-      const { data: exEmail } = await supabase
-        .from('students')
-        .select('id')
-        .eq('email', cleanEmail)
-        .maybeSingle();
-
-      if (exEmail) {
-        setError('البريد الإلكتروني مسجل مسبقاً بالفعل، يرجى تسجيل الدخول مباشرة');
-        setIsSubmitting(false);
-        return;
-      }
-
-      // 5. Check duplicate phone in Supabase
-      const { data: exPhone } = await supabase
-        .from('students')
-        .select('id')
-        .eq('phone', cleanPhone)
-        .maybeSingle();
-
-      if (exPhone) {
-        setError('رقم الهاتف مسجل مسبقاً بحساب طالب آخر');
-        setIsSubmitting(false);
-        return;
-      }
-
-      // 6. Check duplicate full name (strict fuzzy comparison)
-      const { data: allStudents } = await supabase.from('students').select('full_name');
-      if (allStudents) {
-        const normInput = normalizeArabicText(fullName);
-        const isDuplicateName = allStudents.some(
-          (s) => normalizeArabicText(s.full_name) === normInput
-        );
-        if (isDuplicateName) {
-          setError('هذا الاسم مسجل مسبقاً بالمنصة، يرجى كتابة اسمك الحقيقي بالكامل لمنع تكرار الحسابات.');
-          setIsSubmitting(false);
-          return;
-        }
-      }
-
-      // 7. Register official student directly without Email OTP
+      // Register official student directly through secure server API
       const res = await register({
         full_name: fullName,
         email: cleanEmail,

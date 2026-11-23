@@ -18,7 +18,7 @@ import {
   Camera,
   Trash2,
 } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
+import { studentDeleteAccount } from '@/lib/apiClient';
 import { AnimatedLogo } from '@/components/ui/AnimatedLogo';
 import { useTheme } from '@/context/ThemeContext';
 import { useStudentAuth } from '@/context/StudentAuthContext';
@@ -149,7 +149,7 @@ export function DigitalStudentIdCard({ isOpen, onClose }: DigitalStudentIdCardPr
     if (!confirm1) return;
 
     try {
-      await supabase.from('students').delete().eq('id', student.id);
+      await studentDeleteAccount(student.id);
       localStorage.clear();
       sessionStorage.clear();
       alert('تم حذف حسابك وبياناتك الشخصية بنجاح.');

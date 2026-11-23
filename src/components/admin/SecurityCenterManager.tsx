@@ -34,8 +34,16 @@ import {
   UploadCloud,
   Lock,
 } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
-import { hashSha256, logAdminSecurityEvent, generateMasterRecoveryCodes } from '@/lib/authUtils';
+import {
+  adminGetSecurityData,
+  adminUpdateSecuritySettings,
+  adminChangeSuperCredentials,
+  adminUpdateVault,
+  adminGenerateRecoveryCodes,
+  adminManageSubAdmin,
+  adminResetAllStudentPasswords,
+} from '@/lib/apiClient';
+import { hashSha256, logAdminSecurityEvent } from '@/lib/authUtils';
 import { SubAdminUser, AdminSecurityLog, AdminSecuritySettings } from '@/types';
 
 interface SecurityCenterManagerProps {
@@ -133,50 +141,22 @@ export function SecurityCenterManager({ onRefresh }: SecurityCenterManagerProps)
 
     setIsLoading(true);
     try {
-      // 1. Fetch admin_security with timeout
-      try {
-        const secRes = await fetchWithTimeout<any>(
-          supabase.from('admin_security').select('*').eq('id', 'primary').maybeSingle(),
-          5000
-        );
-        if (secRes?.data) {
-          const s = secRes.data as AdminSecuritySettings;
-          setSecuritySettings(s);
-          setNewSuperUsername(s.admin_username || '');
-          setWhatsappApprovalNumber(s.whatsapp_approval_number || '');
-          setSuperAdminSlug(s.super_admin_slug || 'command-mazen');
-          setSuperAdminKey(s.super_admin_key || 'dustour2006');
-          setStaffPortalSlug(s.staff_portal_slug || 'staff-portal');
-          setStaffPortalKey(s.staff_portal_key || 'team2026');
-        }
-      } catch (e) {
-        console.warn('Timeout or error fetching admin_security:', e);
+      const secRes = await adminGetSecurityData();
+      if (secRes?.securitySettings) {
+        const s = secRes.securitySettings as AdminSecuritySettings;
+        setSecuritySettings(s);
+        setNewSuperUsername(s.admin_username || '');
+        setWhatsappApprovalNumber(s.whatsapp_approval_number || '');
+        setSuperAdminSlug(s.super_admin_slug || 'command-mazen');
+        setSuperAdminKey(s.super_admin_key || 'dustour2006');
+        setStaffPortalSlug(s.staff_portal_slug || 'staff-portal');
+        setStaffPortalKey(s.staff_portal_key || 'team2026');
       }
-
-      // 2. Fetch sub-admins with timeout
-      try {
-        const adminsRes = await fetchWithTimeout<any>(
-          supabase.from('admin_users').select('*').order('created_at', { ascending: false }),
-          5000
-        );
-        if (adminsRes?.data) {
-          setSubAdmins(adminsRes.data as SubAdminUser[]);
-        }
-      } catch (e) {
-        console.warn('Timeout or error fetching admin_users:', e);
+      if (secRes?.subAdmins) {
+        setSubAdmins(secRes.subAdmins as SubAdminUser[]);
       }
-
-      // 3. Fetch security logs (recent 25) with timeout
-      try {
-        const logsRes = await fetchWithTimeout<any>(
-          supabase.from('admin_security_logs').select('*').order('created_at', { ascending: false }).limit(25),
-          5000
-        );
-        if (logsRes?.data) {
-          setLogs(logsRes.data as AdminSecurityLog[]);
-        }
-      } catch (e) {
-        console.warn('Timeout or error fetching admin_security_logs:', e);
+      if (secRes?.logs) {
+        setLogs(secRes.logs as AdminSecurityLog[]);
       }
     } catch (err) {
       console.warn('Could not load security center data:', err);
@@ -188,16 +168,6 @@ export function SecurityCenterManager({ onRefresh }: SecurityCenterManagerProps)
 
   useEffect(() => {
     loadData(true);
-
-    const channel = supabase
-      .channel('admin_security_center_realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'admin_users' }, () => loadData())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'admin_security_logs' }, () => loadData())
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
   }, [loadData]);
 
   // Toggle Tab in Staff Tab Matrix
@@ -212,21 +182,8 @@ export function SecurityCenterManager({ onRefresh }: SecurityCenterManagerProps)
     const updatedTabs = { ...currentTabs, [tabId]: nextState };
 
     try {
-      await supabase
-        .from('admin_security')
-        .update({
-          staff_visible_tabs: updatedTabs,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', 'primary');
-
+      await adminUpdateSecuritySettings({ staff_visible_tabs: updatedTabs });
       setSecuritySettings((prev) => (prev ? { ...prev, staff_visible_tabs: updatedTabs } : null));
-
-      await logAdminSecurityEvent(
-        'setting_change',
-        securitySettings.admin_username,
-        `تم ${nextState ? 'إتاحة' : 'حجب'} تبويب (${tabId}) للمشرفين الفرعيين`
-      );
 
       setSuccessMsg(`تم تحديث صلاحية وصول التبويب (${tabId}) بنجاح!`);
       setTimeout(() => setSuccessMsg(''), 3000);
@@ -240,21 +197,8 @@ export function SecurityCenterManager({ onRefresh }: SecurityCenterManagerProps)
     if (!securitySettings) return;
     const nextVal = !securitySettings.manual_approval_enabled;
     try {
-      await supabase
-        .from('admin_security')
-        .update({
-          manual_approval_enabled: nextVal,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', 'primary');
-
+      await adminUpdateSecuritySettings({ manual_approval_enabled: nextVal });
       setSecuritySettings((prev) => (prev ? { ...prev, manual_approval_enabled: nextVal } : null));
-
-      await logAdminSecurityEvent(
-        'setting_change',
-        securitySettings.admin_username,
-        `تم ${nextVal ? 'تفعيل' : 'تعطيل'} نظام المراجعة والاعتماد اليدوي للطلاب الجدد`
-      );
 
       setSuccessMsg(`تم ${nextVal ? 'تفعيل' : 'تعطيل'} الاعتماد اليدوي للطلاب بنجاح!`);
       setTimeout(() => setSuccessMsg(''), 4000);
@@ -268,21 +212,8 @@ export function SecurityCenterManager({ onRefresh }: SecurityCenterManagerProps)
     if (!securitySettings) return;
     const nextVal = !securitySettings.registration_paused;
     try {
-      await supabase
-        .from('admin_security')
-        .update({
-          registration_paused: nextVal,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', 'primary');
-
+      await adminUpdateSecuritySettings({ registration_paused: nextVal });
       setSecuritySettings((prev) => (prev ? { ...prev, registration_paused: nextVal } : null));
-
-      await logAdminSecurityEvent(
-        'setting_change',
-        securitySettings.admin_username,
-        `تم ${nextVal ? 'إيقاف' : 'استئناف'} تسجيل الطلاب الجدد مؤقتاً`
-      );
 
       setSuccessMsg(`تم ${nextVal ? 'إيقاف التسجيل مؤقتاً' : 'فتح التسجيل للطلاب'} بنجاح!`);
       setTimeout(() => setSuccessMsg(''), 4000);
@@ -300,21 +231,8 @@ export function SecurityCenterManager({ onRefresh }: SecurityCenterManagerProps)
       if (!confirmLock) return;
     }
     try {
-      await supabase
-        .from('admin_security')
-        .update({
-          platform_lockdown: nextVal,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', 'primary');
-
+      await adminUpdateSecuritySettings({ platform_lockdown: nextVal });
       setSecuritySettings((prev) => (prev ? { ...prev, platform_lockdown: nextVal } : null));
-
-      await logAdminSecurityEvent(
-        'setting_change',
-        securitySettings.admin_username,
-        `تم ${nextVal ? 'تفعيل' : 'إلغاء'} وضع قفل المنصة الشامل لحالات الطوارئ`
-      );
 
       setSuccessMsg(`تم ${nextVal ? 'تفعيل قفل المنصة الشامل ⚠️' : 'إلغاء قفل المنصة'} بنجاح!`);
       setTimeout(() => setSuccessMsg(''), 4000);
@@ -332,25 +250,47 @@ export function SecurityCenterManager({ onRefresh }: SecurityCenterManagerProps)
     if (!conf) return;
 
     try {
-      const newVersion = (securitySettings.session_version || 1) + 1;
-      await supabase
-        .from('admin_security')
-        .update({
-          session_version: newVersion,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', 'primary');
-
-      await logAdminSecurityEvent(
-        'emergency_panic',
-        securitySettings.admin_username,
-        `تم تنفيذ إغلاق الطوارئ المركزي وترقية إصدار الجلسة إلى v${newVersion}`
-      );
+      await adminUpdateSecuritySettings({
+        session_version: (securitySettings.session_version || 1) + 1,
+      });
 
       alert('تم إنهاء كافة الجلسات النشطة في المنصة بنجاح!');
       loadData();
     } catch {
       setErrorMsg('فشل تنفيذ إغلاق الطوارئ');
+    }
+  };
+
+  // Emergency: Reset All Student Passwords to Unified Password (AlDustour@2006@999#111#111)
+  const [isResettingAllPasswords, setIsResettingAllPasswords] = useState(false);
+  const handleResetAllStudentPasswords = async () => {
+    const conf = confirm(
+      '⚠️ تحذير أمني عاجل وفائق الحساسية ⚠️\n\n' +
+      'هل أنت متأكد تماماً من رغبتك في إعادة ضبط كلمات مرور كافة الطلاب المسجلين بالمنصة فورياً للباسورد الموحد:\n' +
+      'AlDustour@2006@999#111#111\n\n' +
+      '• سيتم إبطال كافة الجلسات السابقة للطلاب فوراً.\n' +
+      '• عند تسجيل أي طالب دخوله سيتم قفل المنصة أمامه وإلزامه بتعيين كلمة مرور شخصية قوية (8 خانات كحد أدنى) قبل السماح له بالوصول لأي محتوى.\n\n' +
+      'هل تود المتابعة والتنفيذ الآن؟'
+    );
+    if (!conf) return;
+
+    setIsResettingAllPasswords(true);
+    try {
+      const res = await adminResetAllStudentPasswords();
+      if (res.success) {
+        alert(
+          `✅ تم بنجاح تصفير وإعادة تعيين كلمات مرور كافة الطلاب (${res.resetCount} طالب) إلى الباسورد الموحد:\n` +
+          `${res.unifiedPassword}\n\n` +
+          'تم تفعيل وضع التحديث الإلزامي لكلمة المرور لكافة الحسابات بنجاح!'
+        );
+        loadData();
+      } else {
+        alert('فشل إعادة تعيين كلمات المرور: ' + (res.error || 'خطأ غير متوقع'));
+      }
+    } catch (err: any) {
+      alert('حدث خطأ أثناء تنفيذ العملية: ' + err.message);
+    } finally {
+      setIsResettingAllPasswords(false);
     }
   };
 
@@ -360,13 +300,7 @@ export function SecurityCenterManager({ onRefresh }: SecurityCenterManagerProps)
     setIsSavingWhatsApp(true);
     try {
       const cleanPhone = whatsappApprovalNumber.replace(/\D/g, '');
-      await supabase
-        .from('admin_security')
-        .update({
-          whatsapp_approval_number: cleanPhone,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', 'primary');
+      await adminUpdateSecuritySettings({ whatsapp_approval_number: cleanPhone });
 
       setSecuritySettings((prev) => (prev ? { ...prev, whatsapp_approval_number: cleanPhone } : null));
       setSuccessMsg('تم حفظ رقم واتساب اعتماد طلبات الطلاب بنجاح! 📱');
@@ -394,16 +328,12 @@ export function SecurityCenterManager({ onRefresh }: SecurityCenterManagerProps)
         return;
       }
 
-      await supabase
-        .from('admin_security')
-        .update({
-          super_admin_slug: cleanSuperSlug,
-          super_admin_key: cleanSuperKey,
-          staff_portal_slug: cleanStaffSlug,
-          staff_portal_key: cleanStaffKey,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', 'primary');
+      await adminUpdateSecuritySettings({
+        super_admin_slug: cleanSuperSlug,
+        super_admin_key: cleanSuperKey,
+        staff_portal_slug: cleanStaffSlug,
+        staff_portal_key: cleanStaffKey,
+      });
 
       setSecuritySettings((prev) =>
         prev
@@ -435,27 +365,15 @@ export function SecurityCenterManager({ onRefresh }: SecurityCenterManagerProps)
 
     setIsGeneratingCodes(true);
     try {
-      const { rawCodes, hashedCodes } = await generateMasterRecoveryCodes();
-
-      await supabase
-        .from('admin_security')
-        .update({
-          recovery_code_hashes: hashedCodes,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', 'primary');
-
-      setGeneratedPlainCodes(rawCodes);
-      setIsRecoveryModalOpen(true);
-      setCopiedCodes(false);
-
-      setSecuritySettings((prev) => (prev ? { ...prev, recovery_code_hashes: hashedCodes } : null));
-
-      await logAdminSecurityEvent(
-        'recovery_codes_generated',
-        securitySettings?.admin_username || 'Super Admin',
-        'تم توليد 5 أكواد استرداد رئيسية جديدة وتشفيرها عبر SHA-256'
-      );
+      const res = await adminGenerateRecoveryCodes();
+      if (res.success && res.rawCodes) {
+        setGeneratedPlainCodes(res.rawCodes);
+        setIsRecoveryModalOpen(true);
+        setCopiedCodes(false);
+        loadData();
+      } else {
+        setErrorMsg('فشل توليد أكواد الاسترداد');
+      }
     } catch {
       setErrorMsg('فشل توليد أكواد الاسترداد');
     } finally {
@@ -478,36 +396,20 @@ export function SecurityCenterManager({ onRefresh }: SecurityCenterManagerProps)
     setErrorMsg('');
 
     try {
-      const updates: any = {
-        admin_username: newSuperUsername.trim(),
-        updated_at: new Date().toISOString(),
-      };
-
-      if (newSuperPassword.trim()) {
-        updates.password_hash = await hashSha256(newSuperPassword.trim());
+      if (newSuperPin.trim() && !/^\d{6}$/.test(newSuperPin.trim())) {
+        setErrorMsg('رمز الأمان السداسي (PIN) يجب أن يتكون من 6 أرقام بالضبط');
+        setIsSavingSuperCreds(false);
+        return;
       }
 
-      if (newSuperPin.trim()) {
-        if (!/^\d{6}$/.test(newSuperPin.trim())) {
-          setErrorMsg('رمز الأمان السداسي (PIN) يجب أن يتكون من 6 أرقام بالضبط');
-          setIsSavingSuperCreds(false);
-          return;
-        }
-        updates.pin_hash = await hashSha256(newSuperPin.trim());
-      }
-
-      const { error } = await supabase
-        .from('admin_security')
-        .update(updates)
-        .eq('id', 'primary');
-
-      if (error) throw error;
-
-      await logAdminSecurityEvent(
-        'super_admin_update',
-        newSuperUsername.trim(),
-        'تم تحديث بيانات اعتماد المشرف العام بنجاح'
+      await adminChangeSuperCredentials(
+        newSuperPassword.trim() || undefined,
+        newSuperPin.trim() || undefined
       );
+
+      if (newSuperUsername.trim() !== securitySettings?.admin_username) {
+        await adminUpdateSecuritySettings({ admin_username: newSuperUsername.trim() });
+      }
 
       setSuccessMsg('تم تحديث بيانات اعتماد المشرف العام بنجاح!');
       setIsEditSuperAdminModalOpen(false);
@@ -553,34 +455,24 @@ export function SecurityCenterManager({ onRefresh }: SecurityCenterManagerProps)
     setIsSavingSubAdmin(true);
 
     try {
-      const updates: any = {
-        username: subUsername.trim(),
-        can_manage_students: canManageStudents,
-        can_manage_content: canManageContent,
-        can_delete_content: canDeleteContent,
-        can_access_student_vault: canAccessStudentVault,
-        updated_at: new Date().toISOString(),
-      };
-
-      if (subPassword.trim()) {
-        updates.password_hash = await hashSha256(subPassword.trim());
-      }
-
-      if (subPin.trim()) {
-        if (!/^\d{6}$/.test(subPin.trim())) {
-          setErrorMsg('رمز الـ PIN للمشرف يجب أن يتكون من 6 أرقام');
-          setIsSavingSubAdmin(false);
-          return;
-        }
-        updates.pin_hash = await hashSha256(subPin.trim());
+      if (subPin.trim() && !/^\d{6}$/.test(subPin.trim())) {
+        setErrorMsg('رمز الـ PIN للمشرف يجب أن يتكون من 6 أرقام');
+        setIsSavingSubAdmin(false);
+        return;
       }
 
       if (editingSubAdmin) {
-        const { error } = await supabase
-          .from('admin_users')
-          .update(updates)
-          .eq('id', editingSubAdmin.id);
-        if (error) throw error;
+        const res = await adminManageSubAdmin('update', {
+          id: editingSubAdmin.id,
+          username: subUsername.trim(),
+          password: subPassword.trim() || undefined,
+          pin: subPin.trim() || undefined,
+          can_manage_students: canManageStudents,
+          can_manage_content: canManageContent,
+          can_delete_content: canDeleteContent,
+          can_access_student_vault: canAccessStudentVault,
+        });
+        if (!res.success) throw new Error(res.error || 'فشل تحديث بيانات المشرف');
         setSuccessMsg(`تم تحديث بيانات المشرف (${subUsername.trim()}) بنجاح!`);
       } else {
         if (!subPassword.trim() || !subPin.trim()) {
@@ -588,10 +480,16 @@ export function SecurityCenterManager({ onRefresh }: SecurityCenterManagerProps)
           setIsSavingSubAdmin(false);
           return;
         }
-        const { error } = await supabase
-          .from('admin_users')
-          .insert(updates);
-        if (error) throw error;
+        const res = await adminManageSubAdmin('create', {
+          username: subUsername.trim(),
+          password: subPassword.trim(),
+          pin: subPin.trim(),
+          can_manage_students: canManageStudents,
+          can_manage_content: canManageContent,
+          can_delete_content: canDeleteContent,
+          can_access_student_vault: canAccessStudentVault,
+        });
+        if (!res.success) throw new Error(res.error || 'فشل إنشاء حساب المشرف');
         setSuccessMsg(`تم إنشاء حساب المشرف (${subUsername.trim()}) بنجاح!`);
       }
 
@@ -611,17 +509,13 @@ export function SecurityCenterManager({ onRefresh }: SecurityCenterManagerProps)
     if (!conf) return;
 
     try {
-      await supabase.from('admin_users').delete().eq('id', admin.id);
-      await logAdminSecurityEvent(
-        'sub_admin_delete',
-        securitySettings?.admin_username || 'Super Admin',
-        `تم حذف حساب المشرف الفرعي (${admin.username})`
-      );
+      const res = await adminManageSubAdmin('delete', { id: admin.id });
+      if (!res.success) throw new Error(res.error || 'فشل حذف المشرف');
       setSuccessMsg(`تم حذف المشرف (${admin.username}) بنجاح`);
       loadData();
       setTimeout(() => setSuccessMsg(''), 4000);
-    } catch {
-      setErrorMsg('فشل حذف المشرف');
+    } catch (err: any) {
+      setErrorMsg(err?.message || 'فشل حذف المشرف');
     }
   };
 
@@ -742,6 +636,35 @@ export function SecurityCenterManager({ onRefresh }: SecurityCenterManagerProps)
               className="px-3 py-1.5 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold text-xs shadow-md transition-all active:scale-95 cursor-pointer"
             >
               طرد فوري 🚨
+            </button>
+          </div>
+
+          {/* Switch 4: Emergency Reset All Student Passwords */}
+          <div className="p-3.5 rounded-2xl bg-amber-950/20 border border-amber-500/40 flex items-center justify-between col-span-1 sm:col-span-2 lg:col-span-3">
+            <div>
+              <div className="flex items-center gap-2 mb-0.5">
+                <span className="text-xs font-black text-amber-400">إعادة تعيين جماعية لكلمات مرور الطلاب</span>
+                <span className="px-2 py-0.5 rounded-md bg-amber-500/20 text-amber-300 font-mono text-[10px] font-bold">
+                  AlDustour@2006@999#111#111
+                </span>
+              </div>
+              <span className="text-[11px] text-slate-300">
+                يقوم بتصفير كلمات المرور لكافة حسابات الطلاب وإلزامهم فورياً بتعيين كلمة سر جديدة وشخصية عند الدخول.
+              </span>
+            </div>
+            <button
+              onClick={handleResetAllStudentPasswords}
+              disabled={isResettingAllPasswords}
+              className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-slate-950 font-bold text-xs shadow-lg shadow-amber-500/20 transition-all active:scale-95 cursor-pointer shrink-0 disabled:opacity-50 flex items-center gap-2"
+            >
+              {isResettingAllPasswords ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>جاري التصفير...</span>
+                </>
+              ) : (
+                <span>تصفير كلمات المرور للباسورد الموحد 🔐</span>
+              )}
             </button>
           </div>
         </div>

@@ -311,22 +311,46 @@ ALTER TABLE public.lecture_ratings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.french_terms ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.subject_covers ENABLE ROW LEVEL SECURITY;
 
--- 14. Permissive Policies for Anon & Authenticated
+-- 14. Strict Security & Lockdown Policies
+-- Public tables: Read-only (SELECT) for anon and authenticated.
+-- Direct mutations (INSERT, UPDATE, DELETE) denied to clients; strictly reserved for service_role.
 DO $$
 DECLARE
     tbl text;
-    tables text[] := ARRAY[
+    public_read_tables text[] := ARRAY[
         'subjects', 'materials', 'urgent_news', 'settings',
         'site_settings', 'site_sections', 'quizzes', 'quiz_questions',
-        'quiz_submissions', 'student_requests', 'lecture_bundles',
-        'lecture_ratings', 'french_terms', 'subject_covers'
+        'lecture_bundles', 'french_terms', 'subject_covers'
     ];
 BEGIN
-    FOREACH tbl IN ARRAY tables LOOP
+    FOREACH tbl IN ARRAY public_read_tables LOOP
         EXECUTE format('DROP POLICY IF EXISTS "Public access on %I" ON public.%I;', tbl, tbl);
-        EXECUTE format('CREATE POLICY "Public access on %I" ON public.%I FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);', tbl, tbl);
+        EXECUTE format('DROP POLICY IF EXISTS "Public read on %I" ON public.%I;', tbl, tbl);
+        EXECUTE format('CREATE POLICY "Public read on %I" ON public.%I FOR SELECT TO anon, authenticated USING (true);', tbl, tbl);
     END LOOP;
 END $$;
+
+-- Revoke mutation privileges on public content tables from client roles
+REVOKE INSERT, UPDATE, DELETE ON TABLE 
+    public.subjects, public.materials, public.urgent_news, 
+    public.settings, public.site_settings, public.site_sections, 
+    public.quizzes, public.quiz_questions, public.lecture_bundles, 
+    public.french_terms, public.subject_covers 
+FROM anon, authenticated;
+
+GRANT SELECT ON TABLE 
+    public.subjects, public.materials, public.urgent_news, 
+    public.settings, public.site_settings, public.site_sections, 
+    public.quizzes, public.quiz_questions, public.lecture_bundles, 
+    public.french_terms, public.subject_covers 
+TO anon, authenticated;
+
+GRANT ALL ON TABLE 
+    public.subjects, public.materials, public.urgent_news, 
+    public.settings, public.site_settings, public.site_sections, 
+    public.quizzes, public.quiz_questions, public.lecture_bundles, 
+    public.french_terms, public.subject_covers 
+TO service_role;
 
 -- 15. Storage Buckets Setup
 INSERT INTO storage.buckets (id, name, public)
@@ -466,22 +490,22 @@ CREATE INDEX IF NOT EXISTS idx_students_is_guest ON public.students(is_guest);
 -- Enable RLS and permissions for students
 ALTER TABLE public.students ENABLE ROW LEVEL SECURITY;
 
+-- Add required security columns
+ALTER TABLE public.students ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN DEFAULT false NOT NULL;
+ALTER TABLE public.students ADD COLUMN IF NOT EXISTS password_salt TEXT;
+
 DO $$ 
 BEGIN
     DROP POLICY IF EXISTS "Public can view students" ON public.students;
-    CREATE POLICY "Public can view students" ON public.students FOR SELECT USING (true);
-    
     DROP POLICY IF EXISTS "Public can register students" ON public.students;
-    CREATE POLICY "Public can register students" ON public.students FOR INSERT WITH CHECK (true);
-    
     DROP POLICY IF EXISTS "Public can update students" ON public.students;
-    CREATE POLICY "Public can update students" ON public.students FOR UPDATE USING (true);
-    
     DROP POLICY IF EXISTS "Public can delete students" ON public.students;
-    CREATE POLICY "Public can delete students" ON public.students FOR DELETE USING (true);
+    DROP POLICY IF EXISTS "Deny public access on students" ON public.students;
 END $$;
 
-GRANT ALL ON TABLE public.students TO anon, authenticated, service_role;
+-- Complete lockdown: Only server-side service_role can access students table!
+REVOKE ALL ON TABLE public.students FROM anon, authenticated;
+GRANT ALL ON TABLE public.students TO service_role;
 
 -- 18. Create Grade Covers Table (Custom background thumbnails for Academic Years 1-4)
 CREATE TABLE IF NOT EXISTS public.grade_covers (
@@ -496,19 +520,15 @@ ALTER TABLE public.grade_covers ENABLE ROW LEVEL SECURITY;
 DO $$ 
 BEGIN
     DROP POLICY IF EXISTS "Public read grade_covers" ON public.grade_covers;
-    CREATE POLICY "Public read grade_covers" ON public.grade_covers FOR SELECT USING (true);
-
     DROP POLICY IF EXISTS "Public insert grade_covers" ON public.grade_covers;
-    CREATE POLICY "Public insert grade_covers" ON public.grade_covers FOR INSERT WITH CHECK (true);
-
     DROP POLICY IF EXISTS "Public update grade_covers" ON public.grade_covers;
-    CREATE POLICY "Public update grade_covers" ON public.grade_covers FOR UPDATE USING (true);
-
     DROP POLICY IF EXISTS "Public delete grade_covers" ON public.grade_covers;
-    CREATE POLICY "Public delete grade_covers" ON public.grade_covers FOR DELETE USING (true);
+    CREATE POLICY "Public read grade_covers" ON public.grade_covers FOR SELECT TO anon, authenticated USING (true);
 END $$;
 
-GRANT ALL ON TABLE public.grade_covers TO anon, authenticated, service_role;
+REVOKE INSERT, UPDATE, DELETE ON TABLE public.grade_covers FROM anon, authenticated;
+GRANT SELECT ON TABLE public.grade_covers TO anon, authenticated;
+GRANT ALL ON TABLE public.grade_covers TO service_role;
 
 -- 19. Ensure avatars storage bucket exists
 INSERT INTO storage.buckets (id, name, public)
@@ -572,15 +592,12 @@ ALTER TABLE public.admin_security ENABLE ROW LEVEL SECURITY;
 DO $$ 
 BEGIN
     DROP POLICY IF EXISTS "Public read admin_security" ON public.admin_security;
-    CREATE POLICY "Public read admin_security" ON public.admin_security FOR SELECT USING (true);
-
     DROP POLICY IF EXISTS "Public update admin_security" ON public.admin_security;
-    CREATE POLICY "Public update admin_security" ON public.admin_security FOR UPDATE USING (true);
-
     DROP POLICY IF EXISTS "Public insert admin_security" ON public.admin_security;
-    CREATE POLICY "Public insert admin_security" ON public.admin_security FOR INSERT WITH CHECK (true);
 END $$;
-GRANT ALL ON TABLE public.admin_security TO anon, authenticated, service_role;
+-- Lockdown admin_security: Service role only
+REVOKE ALL ON TABLE public.admin_security FROM anon, authenticated;
+GRANT ALL ON TABLE public.admin_security TO service_role;
 
 -- 22. Sub-Admin Management & Granular Permissions
 CREATE TABLE IF NOT EXISTS public.admin_users (
@@ -600,9 +617,10 @@ ALTER TABLE public.admin_users ENABLE ROW LEVEL SECURITY;
 DO $$ 
 BEGIN
     DROP POLICY IF EXISTS "Public access admin_users" ON public.admin_users;
-    CREATE POLICY "Public access admin_users" ON public.admin_users FOR ALL USING (true) WITH CHECK (true);
 END $$;
-GRANT ALL ON TABLE public.admin_users TO anon, authenticated, service_role;
+-- Lockdown admin_users: Service role only
+REVOKE ALL ON TABLE public.admin_users FROM anon, authenticated;
+GRANT ALL ON TABLE public.admin_users TO service_role;
 
 -- 23. Security Incident & Audit Logs
 CREATE TABLE IF NOT EXISTS public.admin_security_logs (
@@ -620,9 +638,10 @@ ALTER TABLE public.admin_security_logs ENABLE ROW LEVEL SECURITY;
 DO $$ 
 BEGIN
     DROP POLICY IF EXISTS "Public access admin_security_logs" ON public.admin_security_logs;
-    CREATE POLICY "Public access admin_security_logs" ON public.admin_security_logs FOR ALL USING (true) WITH CHECK (true);
 END $$;
-GRANT ALL ON TABLE public.admin_security_logs TO anon, authenticated, service_role;
+-- Lockdown admin_security_logs: Service role only
+REVOKE ALL ON TABLE public.admin_security_logs FROM anon, authenticated;
+GRANT ALL ON TABLE public.admin_security_logs TO service_role;
 
 ALTER PUBLICATION supabase_realtime ADD TABLE public.admin_security;
 ALTER PUBLICATION supabase_realtime ADD TABLE public.admin_users;
@@ -651,4 +670,30 @@ ALTER TABLE public.admin_security ADD COLUMN IF NOT EXISTS staff_visible_tabs JS
 ALTER TABLE public.admin_security ADD COLUMN IF NOT EXISTS recovery_code_hashes JSONB DEFAULT '[]'::jsonb;
 ALTER TABLE public.admin_security ADD COLUMN IF NOT EXISTS registration_paused BOOLEAN DEFAULT false NOT NULL;
 ALTER TABLE public.admin_security ADD COLUMN IF NOT EXISTS platform_lockdown BOOLEAN DEFAULT false NOT NULL;
+
+-- 25. Legal Stories (Story Media & Flash Tips)
+CREATE TABLE IF NOT EXISTS public.legal_stories (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    title TEXT NOT NULL,
+    media_url TEXT NOT NULL,
+    media_type TEXT DEFAULT 'image',
+    category TEXT DEFAULT 'نصيحة قانونية',
+    caption TEXT DEFAULT '',
+    is_active BOOLEAN DEFAULT true NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT now() NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_legal_stories_created_at ON public.legal_stories(created_at DESC);
+
+ALTER TABLE public.legal_stories ENABLE ROW LEVEL SECURITY;
+DO $$ 
+BEGIN
+    DROP POLICY IF EXISTS "Public access legal_stories" ON public.legal_stories;
+    DROP POLICY IF EXISTS "Public read legal_stories" ON public.legal_stories;
+    CREATE POLICY "Public read legal_stories" ON public.legal_stories FOR SELECT TO anon, authenticated USING (true);
+END $$;
+REVOKE INSERT, UPDATE, DELETE ON TABLE public.legal_stories FROM anon, authenticated;
+GRANT SELECT ON TABLE public.legal_stories TO anon, authenticated;
+GRANT ALL ON TABLE public.legal_stories TO service_role;
+
 

@@ -14,6 +14,7 @@ import {
 import { Subject, AcademicYearId, Material } from '@/types';
 import { ACADEMIC_YEARS } from '@/lib/constants';
 import { supabase } from '@/lib/supabase';
+import { adminDbMutate } from '@/lib/apiClient';
 
 interface SubjectsManagerProps {
   subjects: Subject[];
@@ -46,12 +47,16 @@ export function SubjectsManager({
     setSuccess('');
 
     try {
-      const { error: insertError } = await supabase.from('subjects').insert({
-        name: newSubjectName.trim(),
-        year: newSubjectYear,
+      const res = await adminDbMutate({
+        table: 'subjects',
+        mutation: 'insert',
+        data: {
+          name: newSubjectName.trim(),
+          year: newSubjectYear,
+        },
       });
 
-      if (insertError) throw insertError;
+      if (!res.success) throw new Error(res.error);
 
       setSuccess(`تمت إضافة مادة "${newSubjectName.trim()}" بنجاح!`);
       setNewSubjectName('');
@@ -71,12 +76,13 @@ export function SubjectsManager({
     setIsDeleting(true);
 
     try {
-      const { error } = await supabase
-        .from('subjects')
-        .delete()
-        .eq('id', deletingSubject.id);
+      const res = await adminDbMutate({
+        table: 'subjects',
+        mutation: 'delete',
+        id: deletingSubject.id,
+      });
 
-      if (error) throw error;
+      if (!res.success) throw new Error(res.error);
 
       setDeletingSubject(null);
       onRefresh();

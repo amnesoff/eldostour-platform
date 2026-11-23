@@ -25,6 +25,7 @@ import { GpaCalculator } from '@/components/tools/GpaCalculator';
 import { FrenchLegalDictionary } from '@/components/tools/FrenchLegalDictionary';
 import { DailyMaximChallenge } from '@/components/tools/DailyMaximChallenge';
 import { HonorRollMarquee } from '@/components/quiz/HonorRollMarquee';
+import { LegalStoriesBar } from '@/components/home/LegalStoriesBar';
 import { FloatingWidgets } from '@/components/ui/FloatingWidgets';
 import { ThemeCharacterWidget } from '@/components/ui/ThemeCharacterWidget';
 import { StudentRequestModal } from '@/components/home/StudentRequestModal';
@@ -207,6 +208,9 @@ export default function StudentPortalClient() {
 
       {/* 8. Honor Roll Marquee */}
       <HonorRollMarquee />
+
+      {/* 8B. Interactive Legal Stories Bar */}
+      <LegalStoriesBar />
 
       {/* Main Content Area - TASK 3: pb-32 sm:pb-36 prevents overlap with floating Digital ID button */}
       <main className="flex-1 pb-32 sm:pb-36 space-y-10 sm:space-y-16">

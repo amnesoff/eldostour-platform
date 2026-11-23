@@ -16,7 +16,7 @@ import {
   Clock,
 } from 'lucide-react';
 import { LectureBundle, VideoChapter } from '@/types';
-import { supabase } from '@/lib/supabase';
+import { studentIncrementDownload, studentRateLecture } from '@/lib/apiClient';
 import { COLLEGE_NAME } from '@/lib/constants';
 
 interface LectureBundleModalProps {
@@ -147,7 +147,7 @@ export function LectureBundleModal({
       }
 
       // Increment downloads in Supabase
-      await supabase.rpc('increment_bundle_downloads', { bundle_id: bundle.id });
+      await studentIncrementDownload(bundle.id);
     } catch (err) {
       console.warn('Pack download error:', err);
     } finally {
@@ -167,11 +167,7 @@ export function LectureBundleModal({
       localStorage.setItem('eldostour_rated_bundles', JSON.stringify(ratedBundles));
 
       const sName = localStorage.getItem('eldostour_student_name') || 'طالب منصة الدستور';
-      await supabase.from('lecture_ratings').insert({
-        bundle_id: bundle.id,
-        rating: star,
-        student_name: sName,
-      });
+      await studentRateLecture(bundle.id, star, sName);
     } catch {
       // ignore
     }

@@ -13,6 +13,7 @@ import {
 import { LectureBundle, AcademicYearId, Subject, Quiz, VideoChapter } from '@/types';
 import { ACADEMIC_YEARS, COLLEGE_NAME, PLATFORM_NAME } from '@/lib/constants';
 import { supabase, uploadThumbnail, uploadMaterialFile } from '@/lib/supabase';
+import { adminDbMutate } from '@/lib/apiClient';
 
 interface LectureBundleManagerProps {
   subjects: Subject[];
@@ -175,29 +176,33 @@ export function LectureBundleManager({
         }
       }
 
-      // 6. Insert Bundle into Database
-      const { error: insErr } = await supabase.from('lecture_bundles').insert({
-        title: title.trim(),
-        professor_name: professorName.trim(),
-        lecture_date: lectureDate.trim(),
-        year,
-        subject_id: subjectId,
-        difficulty,
-        related_quiz_id: relatedQuizId || null,
-        thumbnail_url: finalThumbUrl,
-        thumbnail_storage_path: finalThumbPath,
-        video_url: finalVideoUrl,
-        video_storage_path: finalVideoPath,
-        video_chapters: chapters,
-        lecture_pdf_url: finalLecPdfUrl,
-        lecture_pdf_storage_path: finalLecPdfPath,
-        summary_pdf_url: finalSumPdfUrl,
-        summary_pdf_storage_path: finalSumPdfPath,
-        questions_pdf_url: finalQuesPdfUrl,
-        questions_pdf_storage_path: finalQuesPdfPath,
+      // 6. Insert Bundle into Database via secure server route
+      const res = await adminDbMutate({
+        table: 'lecture_bundles',
+        mutation: 'insert',
+        data: {
+          title: title.trim(),
+          professor_name: professorName.trim(),
+          lecture_date: lectureDate.trim(),
+          year,
+          subject_id: subjectId,
+          difficulty,
+          related_quiz_id: relatedQuizId || null,
+          thumbnail_url: finalThumbUrl,
+          thumbnail_storage_path: finalThumbPath,
+          video_url: finalVideoUrl,
+          video_storage_path: finalVideoPath,
+          video_chapters: chapters,
+          lecture_pdf_url: finalLecPdfUrl,
+          lecture_pdf_storage_path: finalLecPdfPath,
+          summary_pdf_url: finalSumPdfUrl,
+          summary_pdf_storage_path: finalSumPdfPath,
+          questions_pdf_url: finalQuesPdfUrl,
+          questions_pdf_storage_path: finalQuesPdfPath,
+        },
       });
 
-      if (insErr) throw insErr;
+      if (!res.success) throw new Error(res.error || 'فشل حفظ الباقة');
 
       setSuccess('تم إنشاء باقة المحاضرة الشاملة بنجاح!');
       setTitle('');
@@ -224,7 +229,7 @@ export function LectureBundleManager({
   const handleDeleteBundle = async (id: string) => {
     if (!confirm('هل أنت متأكد من حذف هذه الباقة بالكامل؟')) return;
     try {
-      await supabase.from('lecture_bundles').delete().eq('id', id);
+      await adminDbMutate({ table: 'lecture_bundles', mutation: 'delete', id });
       loadBundles();
       onRefresh?.();
     } catch (err: any) {

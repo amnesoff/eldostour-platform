@@ -10,7 +10,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { Quiz, QuizQuestion } from '@/types';
-import { supabase } from '@/lib/supabase';
+import { studentSubmitQuiz } from '@/lib/apiClient';
 import { AnimatedLogo } from '@/components/ui/AnimatedLogo';
 import { COLLEGE_NAME } from '@/lib/constants';
 
@@ -160,28 +160,21 @@ export function QuizPlayerModal({
     if (currentQIndex < questions.length - 1) {
       setCurrentQIndex((prev) => prev + 1);
     } else {
-      // Calculate score and submit
+      // Server-side Grading & Submission (Prevents DevTools Cheat Inspection)
       setIsSubmitting(true);
-      let calculatedScore = 0;
-      questions.forEach((q, idx) => {
-        if (answers[idx] === q.correct_answer) {
-          calculatedScore++;
-        }
-      });
-
-      const percentage = Math.round((calculatedScore / questions.length) * 100);
-      setFinalScore(calculatedScore);
-
       try {
-        await supabase.from('quiz_submissions').insert({
-          quiz_id: quiz.id,
-          student_name: studentName.trim(),
-          student_phone: studentPhone.trim() || null,
+        const res = await studentSubmitQuiz({
+          quizId: quiz.id,
+          answers,
+          studentName: studentName.trim(),
+          studentPhone: studentPhone.trim() || undefined,
           year: quiz.year,
-          score: calculatedScore,
-          total_score: questions.length,
-          percentage: percentage,
         });
+
+        if (res.success) {
+          setFinalScore(res.score);
+          setTotalQuestions(res.totalScore);
+        }
 
         // Persist student profile for future visits
         try {

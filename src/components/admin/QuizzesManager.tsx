@@ -17,6 +17,7 @@ import {
 import { Quiz, QuizSubmission, AcademicYearId, Subject, CertificateData } from '@/types';
 import { ACADEMIC_YEARS } from '@/lib/constants';
 import { supabase } from '@/lib/supabase';
+import { adminDbMutate } from '@/lib/apiClient';
 import { CertificateModal } from '@/components/admin/CertificateModal';
 
 interface QuizzesManagerProps {
@@ -191,23 +192,24 @@ export function QuizzesManager({ subjects, onRefresh }: QuizzesManagerProps) {
     setError('');
 
     try {
-      // 1. Insert Quiz
-      const { data: createdQuiz, error: qErr } = await supabase
-        .from('quizzes')
-        .insert({
+      // 1. Insert Quiz via secure server route
+      const quizRes = await adminDbMutate({
+        table: 'quizzes',
+        mutation: 'insert',
+        data: {
           title: title.trim(),
           description: description.trim(),
           year,
           subject_id: subjectId,
           duration_minutes: duration,
           is_active: true,
-        })
-        .select()
-        .single();
+        },
+      });
 
-      if (qErr) throw qErr;
+      if (!quizRes.success) throw new Error(quizRes.error);
+      const createdQuiz = quizRes.data;
 
-      // 2. Insert Questions
+      // 2. Insert Questions via secure server route
       if (createdQuiz && questions.length > 0) {
         const rowsToInsert = questions.map((q, idx) => ({
           quiz_id: createdQuiz.id,
@@ -219,8 +221,13 @@ export function QuizzesManager({ subjects, onRefresh }: QuizzesManagerProps) {
           order_index: idx + 1,
         }));
 
-        const { error: insErr } = await supabase.from('quiz_questions').insert(rowsToInsert);
-        if (insErr) throw insErr;
+        const insRes = await adminDbMutate({
+          table: 'quiz_questions',
+          mutation: 'insert',
+          data: rowsToInsert,
+        });
+
+        if (!insRes.success) throw new Error(insRes.error);
       }
 
       setSuccess('تم إنشاء الاختبار وإضافة كافة الأسئلة بنجاح!');
@@ -250,7 +257,12 @@ export function QuizzesManager({ subjects, onRefresh }: QuizzesManagerProps) {
   const handleDeleteQuiz = async (id: string) => {
     if (!confirm('هل أنت متأكد من حذف هذا الاختبار وجميع أسئلته ونتائجه؟')) return;
     try {
-      await supabase.from('quizzes').delete().eq('id', id);
+      const res = await adminDbMutate({
+        table: 'quizzes',
+        mutation: 'delete',
+        id,
+      });
+      if (!res.success) throw new Error(res.error);
       loadData();
       onRefresh?.();
     } catch (err: any) {

@@ -14,7 +14,8 @@ import {
 } from 'lucide-react';
 import { ACADEMIC_YEARS } from '@/lib/constants';
 import { AcademicYearId, Subject, MaterialType } from '@/types';
-import { uploadMaterialFile, supabase } from '@/lib/supabase';
+import { uploadMaterialFile } from '@/lib/supabase';
+import { adminDbMutate } from '@/lib/apiClient';
 import { formatFileSize } from '@/lib/utils';
 
 interface BulkUploadFile {
@@ -168,21 +169,25 @@ export function BulkUploader({ subjects, onUploadSuccess }: BulkUploaderProps) {
           throw new Error('فشل رفع الملف إلى التخزين السحابي');
         }
 
-        // 2. Insert row into public.materials table
-        const { error: dbError } = await supabase.from('materials').insert({
-          title: item.title,
-          description: item.customDescription || commonDescription || '',
-          file_type: item.fileType,
-          file_url: uploadResult.publicUrl,
-          storage_path: uploadResult.storagePath,
-          year: selectedYear,
-          subject_id: selectedSubjectId,
-          file_size: item.file.size,
-          likes_count: 0,
+        // 2. Insert row into materials table via secure server route
+        const mutateRes = await adminDbMutate({
+          table: 'materials',
+          mutation: 'insert',
+          data: {
+            title: item.title,
+            description: item.customDescription || commonDescription || '',
+            file_type: item.fileType,
+            file_url: uploadResult.publicUrl,
+            storage_path: uploadResult.storagePath,
+            year: selectedYear,
+            subject_id: selectedSubjectId,
+            file_size: item.file.size,
+            likes_count: 0,
+          },
         });
 
-        if (dbError) {
-          throw dbError;
+        if (!mutateRes.success) {
+          throw new Error(mutateRes.error || 'فشل حفظ بيانات الملف');
         }
 
         // Mark completed

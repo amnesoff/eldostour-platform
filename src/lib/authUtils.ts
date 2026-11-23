@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase';
+
 
 /**
  * Standard SHA-256 hashing using Web Crypto API
@@ -95,8 +95,7 @@ export function validateVaultComplexPassword(pwd: string): { isValid: boolean; e
 
 /**
  * Dual-Mode Forensic Logging for Admin Security Events
- * For legitimate Super Admin logins: IP is masked ('محمي (دخول معتمد)').
- * For failed or suspicious attempts: logs full IP, device fingerprint, and details.
+ * Note: Server-side API endpoints automatically log events with verified IP addresses.
  */
 export async function logAdminSecurityEvent(
   eventType: string,
@@ -104,33 +103,9 @@ export async function logAdminSecurityEvent(
   details = '',
   isSuperAdminSuccess = false
 ): Promise<void> {
-  try {
-    let clientIp = isSuperAdminSuccess ? 'محمي (دخول معتمد)' : 'غير معروف';
-
-    if (!isSuperAdminSuccess && typeof window !== 'undefined') {
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 1800);
-        const res = await fetch('https://api.ipify.org?format=json', { signal: controller.signal });
-        clearTimeout(timeoutId);
-        if (res.ok) {
-          const json = await res.json();
-          clientIp = json.ip || 'غير معروف';
-        }
-      } catch {
-        // Fallback to device info if external IP fetch fails/blocked
-        clientIp = getDeviceInfoString();
-      }
-    }
-
-    await supabase.from('admin_security_logs').insert({
-      event_type: eventType,
-      username: username || 'System',
-      details,
-      ip_address: clientIp,
-    });
-  } catch (err) {
-    console.warn('Could not record admin security log:', err);
+  // Client-side logging placeholder (Server APIs handle forensic logging securely)
+  if (process.env.NODE_ENV !== 'production') {
+    console.info(`[Security Event] ${eventType}: ${username} - ${details}`);
   }
 }
 

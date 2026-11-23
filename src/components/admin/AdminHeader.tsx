@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { LogOut, ShieldCheck, Clock, ShieldAlert, Crown, AlertTriangle, Loader2 } from 'lucide-react';
 import { Logo } from '@/components/ui/Logo';
-import { supabase } from '@/lib/supabase';
+import { adminPanicRevoke, adminLogout } from '@/lib/apiClient';
 import { logAdminSecurityEvent } from '@/lib/authUtils';
 import { AdminSession } from '@/types';
 
@@ -19,31 +19,8 @@ export function AdminHeader({ onLogout, adminSession }: AdminHeaderProps) {
   const handlePanicRevoke = async () => {
     setIsRevoking(true);
     try {
-      // 1. Fetch current security row and increment session_version
-      const { data: currentSec } = await supabase
-        .from('admin_security')
-        .select('session_version')
-        .eq('id', 'primary')
-        .single();
-
-      const newVersion = (currentSec?.session_version || 1) + 1;
-
-      await supabase
-        .from('admin_security')
-        .update({
-          session_version: newVersion,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', 'primary');
-
-      // 2. Log panic event
-      await logAdminSecurityEvent(
-        'panic_revoke',
-        adminSession?.username || 'Admin',
-        `تم تفعيل إغلاق الطوارئ المركزي وإبطال كافة الجلسات النشطة (الإصدار الجديد: ${newVersion})`
-      );
-
-      // 3. Clear session and logout immediately
+      await adminPanicRevoke();
+      await adminLogout();
       sessionStorage.clear();
       onLogout();
     } catch (err) {

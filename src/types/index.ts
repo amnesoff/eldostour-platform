@@ -20,6 +20,7 @@ export interface Student {
   is_approved?: boolean;
   is_verified?: boolean;
   is_banned?: boolean;
+  must_change_password?: boolean;
   device_fingerprint?: string;
   last_device_info?: string;
   activity_score?: number;
@@ -41,6 +42,7 @@ export interface RegisterStudentData {
   is_approved?: boolean;
   is_verified?: boolean;
   is_banned?: boolean;
+  must_change_password?: boolean;
   device_fingerprint?: string;
   last_device_info?: string;
   activity_score?: number;
@@ -98,6 +100,17 @@ export interface AdminSecurityLog {
   username?: string;
   details?: string;
   ip_address?: string;
+  created_at: string;
+}
+
+export interface LegalStory {
+  id: string;
+  title: string;
+  media_url: string;
+  media_type?: 'image' | 'video';
+  category?: string;
+  caption?: string;
+  is_active?: boolean;
   created_at: string;
 }
 

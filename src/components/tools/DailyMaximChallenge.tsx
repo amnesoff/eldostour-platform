@@ -9,8 +9,7 @@ import {
   Check,
 } from 'lucide-react';
 import { LEGAL_MAXIMS, DAILY_CHALLENGES } from '@/lib/constants';
-import { supabase } from '@/lib/supabase';
-import { QuizQuestion } from '@/types';
+
 
 interface ChallengeItem {
   id: string;
@@ -49,38 +48,15 @@ export function DailyMaximChallenge() {
     }
 
     try {
-      // Try to fetch from Supabase quiz_questions
-      const { data: dbQuestions } = await supabase
-        .from('quiz_questions')
-        .select('*')
-        .limit(20);
-
-      let pool: ChallengeItem[] = [];
-
-      if (dbQuestions && dbQuestions.length > 0) {
-        pool = dbQuestions.map((q: QuizQuestion) => ({
-          id: q.id,
-          question: q.question_text,
-          type: q.question_type,
-          options: q.options || ['صحيح', 'خطأ'],
-          correctAnswer: q.correct_answer,
-          explanation: q.explanation || 'سند قانوني معتمد من المنهج الجامعي',
-          articleRef: 'منصة الدستور التعليمية',
-        }));
-      }
-
-      // Add fallback daily challenges to pool
-      DAILY_CHALLENGES.forEach((dc) => {
-        pool.push({
-          id: `dc-${dc.id}`,
-          question: dc.question,
-          type: 'true_false',
-          options: ['صحيح', 'خطأ'],
-          correctAnswer: dc.correctAnswer ? 'صحيح' : 'خطأ',
-          explanation: dc.explanation,
-          articleRef: dc.articleRef,
-        });
-      });
+      const pool: ChallengeItem[] = DAILY_CHALLENGES.map((dc) => ({
+        id: `dc-${dc.id}`,
+        question: dc.question,
+        type: 'true_false',
+        options: ['صحيح', 'خطأ'],
+        correctAnswer: dc.correctAnswer ? 'صحيح' : 'خطأ',
+        explanation: dc.explanation,
+        articleRef: 'منصة الدستور التعليمية',
+      }));
 
       // Filter unseen questions
       let unseen = pool.filter((item) => !solvedIds.includes(item.id));

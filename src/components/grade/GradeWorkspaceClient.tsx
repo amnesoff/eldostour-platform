@@ -200,10 +200,10 @@ export default function GradeWorkspaceClient({ gradeId }: GradeWorkspaceClientPr
       const fetchedMaterials = (matData as Material[]) || [];
       setMaterials(fetchedMaterials);
 
-      // 4. Fetch Quizzes for this grade
+      // 4. Fetch Quizzes for this grade (Strictly excluding correct_answer to prevent student cheating)
       const { data: quizData } = await supabase
         .from('quizzes')
-        .select('*, subjects(name), quiz_questions(*)')
+        .select('*, subjects(name), quiz_questions(id, quiz_id, question_text, question_type, options, order_index)')
         .eq('year', gradeId)
         .eq('is_active', true)
         .order('created_at', { ascending: false });

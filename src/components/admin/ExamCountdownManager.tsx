@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { ExamCountdownSettings } from '@/types';
 import { supabase } from '@/lib/supabase';
+import { adminDbMutate } from '@/lib/apiClient';
 import { calculateTimeRemaining } from '@/lib/utils';
 
 interface ExamCountdownManagerProps {
@@ -86,13 +87,17 @@ export function ExamCountdownManager({
         target_date: new Date(targetDate).toISOString(),
       };
 
-      const { error: upsertErr } = await supabase.from('settings').upsert({
-        key: 'exam_countdown',
-        value: payload,
-        updated_at: new Date().toISOString(),
+      const res = await adminDbMutate({
+        table: 'settings',
+        mutation: 'upsert',
+        data: {
+          key: 'exam_countdown',
+          value: payload,
+          updated_at: new Date().toISOString(),
+        },
       });
 
-      if (upsertErr) throw upsertErr;
+      if (!res.success) throw new Error(res.error || 'فشل حفظ الإعدادات');
 
       setSuccess('تم حفظ إعدادات عداد الامتحانات بنجاح وتحديثها لحظياً للطلاب!');
       setTimeout(() => setSuccess(''), 3500);

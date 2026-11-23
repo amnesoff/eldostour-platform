@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { MessageSquare, Trash2, Phone } from 'lucide-react';
 import { StudentRequest } from '@/types';
 import { supabase } from '@/lib/supabase';
+import { adminDbMutate } from '@/lib/apiClient';
 import { formatDateArabic } from '@/lib/utils';
 import { EmptyState } from '@/components/ui/EmptyState';
 
@@ -32,10 +33,13 @@ export function RequestsManager() {
   const handleToggleStatus = async (req: StudentRequest) => {
     const nextStatus = req.status === 'pending' ? 'resolved' : 'pending';
     try {
-      await supabase
-        .from('student_requests')
-        .update({ status: nextStatus })
-        .eq('id', req.id);
+      const res = await adminDbMutate({
+        table: 'student_requests',
+        mutation: 'update',
+        id: req.id,
+        data: { status: nextStatus },
+      });
+      if (!res.success) throw new Error(res.error);
       fetchRequests();
     } catch (err: any) {
       alert(`خطأ: ${err?.message || ''}`);
@@ -45,7 +49,12 @@ export function RequestsManager() {
   const handleDelete = async (id: string) => {
     if (!confirm('حذف هذا الطلب؟')) return;
     try {
-      await supabase.from('student_requests').delete().eq('id', id);
+      const res = await adminDbMutate({
+        table: 'student_requests',
+        mutation: 'delete',
+        id,
+      });
+      if (!res.success) throw new Error(res.error);
       fetchRequests();
     } catch (err: any) {
       alert(`خطأ: ${err?.message || ''}`);

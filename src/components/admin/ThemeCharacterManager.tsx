@@ -16,6 +16,7 @@ import {
   ToggleRight,
 } from 'lucide-react';
 import { supabase, uploadCustomCharacter } from '@/lib/supabase';
+import { adminDbMutate } from '@/lib/apiClient';
 import { CharacterWidgetSettings, OccasionTheme, CharacterPresetId } from '@/types';
 import {
   CHARACTER_PRESETS,
@@ -91,11 +92,13 @@ export function ThemeCharacterManager({ onSettingsUpdated }: ThemeCharacterManag
         active_occasion_theme: themeKey,
       };
 
-      const { error } = await supabase
-        .from('site_settings')
-        .upsert({ key: 'general', value: updatedGeneral }, { onConflict: 'key' });
+      const res = await adminDbMutate({
+        table: 'site_settings',
+        mutation: 'upsert',
+        data: { key: 'general', value: updatedGeneral },
+      });
 
-      if (error) throw error;
+      if (!res.success) throw new Error(res.error);
 
       setActiveTheme(themeKey);
       setSuccessMsg(`تم تفعيل الثيم (${themeKey}) بنجاح وسيتزامن فوراً لدى جميع الطلاب!`);
@@ -113,11 +116,13 @@ export function ThemeCharacterManager({ onSettingsUpdated }: ThemeCharacterManag
     setIsSavingWidget(true);
     setErrorMsg('');
     try {
-      const { error } = await supabase
-        .from('site_settings')
-        .upsert({ key: 'character_widget', value: newSettings }, { onConflict: 'key' });
+      const res = await adminDbMutate({
+        table: 'site_settings',
+        mutation: 'upsert',
+        data: { key: 'character_widget', value: newSettings },
+      });
 
-      if (error) throw error;
+      if (!res.success) throw new Error(res.error);
 
       setCharSettings(newSettings);
       setSuccessMsg('تم حفظ وتحديث إعدادات الشخصية التفاعلية بنجاح!');

@@ -20,6 +20,7 @@ import { SiteSettings, SiteSection, AcademicYearId } from '@/types';
 import { DEFAULT_SITE_SETTINGS, DEFAULT_SECTIONS, ACADEMIC_YEARS } from '@/lib/constants';
 import { compressImageFile } from '@/lib/authUtils';
 import { supabase } from '@/lib/supabase';
+import { adminDbMutate } from '@/lib/apiClient';
 
 interface CmsManagerProps {
   onRefresh?: () => void;
@@ -70,22 +71,30 @@ export function CmsManager({ onRefresh }: CmsManagerProps) {
 
     try {
       // 1. Save general settings
-      const { error: sErr } = await supabase.from('site_settings').upsert({
-        key: 'general',
-        value: settings,
-        updated_at: new Date().toISOString(),
+      const sRes = await adminDbMutate({
+        table: 'site_settings',
+        mutation: 'upsert',
+        data: {
+          key: 'general',
+          value: settings,
+          updated_at: new Date().toISOString(),
+        },
       });
-      if (sErr) throw sErr;
+      if (!sRes.success) throw new Error(sRes.error || 'فشل حفظ الإعدادات');
 
       // 2. Save sections visibility & order
       for (const sec of sections) {
-        await supabase.from('site_sections').upsert({
-          id: sec.id,
-          section_key: sec.section_key,
-          title: sec.title,
-          is_visible: sec.is_visible,
-          order_index: sec.order_index,
-          updated_at: new Date().toISOString(),
+        await adminDbMutate({
+          table: 'site_sections',
+          mutation: 'upsert',
+          data: {
+            id: sec.id,
+            section_key: sec.section_key,
+            title: sec.title,
+            is_visible: sec.is_visible,
+            order_index: sec.order_index,
+            updated_at: new Date().toISOString(),
+          },
         });
       }
 
@@ -95,10 +104,14 @@ export function CmsManager({ onRefresh }: CmsManagerProps) {
           const yNum = Number(yearStr) as AcademicYearId;
           if (yNum >= 1 && yNum <= 4) {
             try {
-              await supabase.from('grade_covers').upsert({
-                year: yNum,
-                cover_image_url: url || '',
-                updated_at: new Date().toISOString(),
+              await adminDbMutate({
+                table: 'grade_covers',
+                mutation: 'upsert',
+                data: {
+                  year: yNum,
+                  cover_image_url: url || '',
+                  updated_at: new Date().toISOString(),
+                },
               });
             } catch {
               // Ignore if table not created yet

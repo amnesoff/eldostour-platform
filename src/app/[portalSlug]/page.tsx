@@ -1,7 +1,7 @@
 import React, { Suspense } from 'react';
 import { notFound } from 'next/navigation';
 import AdminDashboardClient from '@/components/admin/AdminDashboardClient';
-import { supabase } from '@/lib/supabase';
+import { supabaseAdmin } from '@/lib/server/supabaseAdmin';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -17,7 +17,7 @@ export default async function SecretPortalPage({ params, searchParams }: PortalP
   const keyParam = typeof sParams.key === 'string' ? sParams.key.trim() : '';
 
   // Fetch configured secret portal slugs & keys from admin_security
-  const { data: secRow } = await supabase
+  const { data: secRow } = await supabaseAdmin
     .from('admin_security')
     .select('super_admin_slug, super_admin_key, staff_portal_slug, staff_portal_key')
     .eq('id', 'primary')

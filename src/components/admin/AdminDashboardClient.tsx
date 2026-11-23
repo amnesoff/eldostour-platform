@@ -37,6 +37,7 @@ import { SecurityCenterManager } from '@/components/admin/SecurityCenterManager'
 import { RequestsManager } from '@/components/admin/RequestsManager';
 import { ThemeCharacterManager } from '@/components/admin/ThemeCharacterManager';
 import { supabase } from '@/lib/supabase';
+import { adminGetSecurityData } from '@/lib/apiClient';
 import { Material, Subject, UrgentNewsItem, ExamCountdownSettings, AdminSession } from '@/types';
 
 type AdminTab =
@@ -228,36 +229,32 @@ export default function AdminDashboardClient({
         setCountdownSettings(sett.value as ExamCountdownSettings);
       }
 
-      // 5. Fetch Security Settings & Staff Visible Tabs
-      const { data: secRow } = await supabase
-        .from('admin_security')
-        .select('staff_visible_tabs')
-        .eq('id', 'primary')
-        .maybeSingle();
-
-      if (secRow?.staff_visible_tabs) {
-        setStaffVisibleTabs(secRow.staff_visible_tabs);
-      }
-
-      // 6. Check Recent Failed Attempts (last 24 hours)
-      const { data: recentFails } = await supabase
-        .from('admin_security_logs')
-        .select('*')
-        .or('event_type.eq.failed_login,event_type.eq.lockout')
-        .order('created_at', { ascending: false })
-        .limit(1);
-
-      if (recentFails && recentFails.length > 0) {
-        const f = recentFails[0];
-        const failTime = new Date(f.created_at).getTime();
-        if (Date.now() - failTime < 24 * 60 * 60 * 1000) {
-          setSecurityAlert({
-            target: f.username || 'غير معروف',
-            details: f.details || 'محاولة دخول غير مصرح بها',
-            ip: f.ip_address || 'غير محدد',
-            time: new Date(f.created_at).toLocaleTimeString('ar-EG'),
-          });
+      // 5. Fetch Security Settings & Staff Visible Tabs safely via server API
+      try {
+        const secRes = await adminGetSecurityData();
+        if (secRes?.securitySettings?.staff_visible_tabs) {
+          setStaffVisibleTabs(secRes.securitySettings.staff_visible_tabs);
         }
+
+        if (secRes?.logs && secRes.logs.length > 0) {
+          const recentFails = secRes.logs.filter(
+            (l: any) => l.event_type === 'failed_login' || l.event_type === 'lockout'
+          );
+          if (recentFails.length > 0) {
+            const f = recentFails[0];
+            const failTime = new Date(f.created_at).getTime();
+            if (Date.now() - failTime < 24 * 60 * 60 * 1000) {
+              setSecurityAlert({
+                target: f.username || 'غير معروف',
+                details: f.details || 'محاولة دخول غير مصرح بها',
+                ip: f.ip_address || 'غير محدد',
+                time: new Date(f.created_at).toLocaleTimeString('ar-EG'),
+              });
+            }
+          }
+        }
+      } catch (secErr) {
+        console.warn('Could not load security tab config:', secErr);
       }
     } catch (err) {
       console.warn('Error fetching admin data:', err);
@@ -288,25 +285,8 @@ export default function AdminDashboardClient({
       })
       .subscribe();
 
-    const panicChannel = supabase
-      .channel('admin_security_panic_version_sync')
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'admin_security' },
-        (payload) => {
-          const newVersion = payload.new?.session_version;
-          const currentVersion = adminSession?.session_version || 1;
-          if (newVersion && newVersion > currentVersion) {
-            alert('⚠️ تم تفعيل إغلاق الطوارئ المركزي من قبل الإدارة العليا. تم إنهاء كافة الجلسات النشطة لحماية المنصة.');
-            handleLogout();
-          }
-        }
-      )
-      .subscribe();
-
     return () => {
       supabase.removeChannel(channel);
-      supabase.removeChannel(panicChannel);
     };
   }, [isAuthenticated, loadAdminData, adminSession, handleLogout]);
 
