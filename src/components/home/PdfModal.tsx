@@ -27,15 +27,17 @@ interface PdfModalProps {
 interface PdfPageCanvasProps {
   pdfDoc: any;
   pageNumber: number;
-  zoomScale: number;
+  zoomLevel: number;
   isNightReader: boolean;
+  watermarkText?: string;
 }
 
 function PdfPageCanvas({
   pdfDoc,
   pageNumber,
-  zoomScale,
+  zoomLevel,
   isNightReader,
+  watermarkText,
 }: PdfPageCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isRendered, setIsRendered] = useState(false);
@@ -59,24 +61,21 @@ function PdfPageCanvas({
         const page = await pdfDoc.getPage(pageNumber);
         if (isCancelled) return;
 
-        // Container width calculation for responsive crisp scaling
-        const screenWidth = typeof window !== 'undefined' ? window.innerWidth : 800;
-        const containerWidth = Math.min(screenWidth - 32, 850);
-        const unscaledViewport = page.getViewport({ scale: 1 });
-        const targetWidth = containerWidth * zoomScale;
-        const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1.5 : 1.5;
-        const scale = (targetWidth / unscaledViewport.width) * dpr;
-        const viewport = page.getViewport({ scale });
+        // 1. High-DPI Super-Sampled Multiplier: Math.max(dpr, 2.5) * zoomLevel (capped at 4.0)
+        const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
+        const calculatedScale = Math.max(dpr, 2.5) * zoomLevel;
+        const renderScale = Math.min(Math.max(calculatedScale, 1.5), 4.0);
+
+        const viewport = page.getViewport({ scale: renderScale });
 
         const canvas = canvasRef.current;
         if (!canvas) return;
         const context = canvas.getContext('2d');
         if (!context) return;
 
-        canvas.width = viewport.width;
-        canvas.height = viewport.height;
-        canvas.style.width = `${targetWidth}px`;
-        canvas.style.height = `${(viewport.height / viewport.width) * targetWidth}px`;
+        // Set high-DPI internal raster buffer dimensions
+        canvas.width = Math.floor(viewport.width);
+        canvas.height = Math.floor(viewport.height);
 
         const renderContext = {
           canvasContext: context,
@@ -109,22 +108,33 @@ function PdfPageCanvas({
         }
       }
     };
-  }, [pdfDoc, pageNumber, zoomScale]);
+  }, [pdfDoc, pageNumber, zoomLevel]);
 
   return (
-    <div className="relative my-3 flex flex-col items-center select-none shadow-xl rounded-2xl overflow-hidden bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+    <div className="relative my-3 w-full flex flex-col items-center select-none shadow-xl rounded-2xl overflow-hidden bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 transition-all duration-200">
       {!isRendered && (
         <div className="w-full h-80 sm:h-96 flex flex-col items-center justify-center bg-slate-100 dark:bg-slate-950 text-slate-400 gap-2">
           <Loader2 className="w-6 h-6 animate-spin text-amber-500" />
-          <span className="text-xs">جاري تجهيز صفحة {pageNumber}...</span>
+          <span className="text-xs">جاري معالجة صفحة {pageNumber} بدقة فائقة...</span>
         </div>
       )}
       <canvas
         ref={canvasRef}
-        className={`max-w-full transition-all duration-300 ${
+        style={{ width: '100%', height: 'auto' }}
+        className={`block transition-all duration-300 ${
           isNightReader ? 'filter invert-[0.92] hue-rotate-180 brightness-95 contrast-125' : ''
         }`}
       />
+      {watermarkText && (
+        <div className="absolute inset-0 pointer-events-none select-none flex flex-col items-center justify-center opacity-[0.06] dark:opacity-[0.04] rotate-[-24deg] z-10 overflow-hidden">
+          <div className="text-sm sm:text-lg font-black text-slate-900 dark:text-white text-center leading-loose">
+            {watermarkText}
+          </div>
+          <div className="text-[11px] sm:text-xs font-bold text-amber-600 dark:text-amber-400">
+            {COLLEGE_NAME}
+          </div>
+        </div>
+      )}
       <div className="w-full py-1.5 px-3 bg-slate-100 dark:bg-slate-950 text-slate-500 dark:text-slate-400 text-[10px] text-center font-mono border-t border-slate-200 dark:border-slate-800">
         صفحة {pageNumber}
       </div>
@@ -136,7 +146,7 @@ export function PdfModal({ material, onClose }: PdfModalProps) {
   const { student, isGuest } = useStudentAuth();
   const [isNightReader, setIsNightReader] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
-  const [zoomScale, setZoomScale] = useState(1);
+  const [zoomLevel, setZoomLevel] = useState(1);
   const [pdfDoc, setPdfDoc] = useState<any>(null);
   const [numPages, setNumPages] = useState<number>(0);
   const [isLoadingPdf, setIsLoadingPdf] = useState(true);
@@ -209,9 +219,9 @@ export function PdfModal({ material, onClose }: PdfModalProps) {
     }
   };
 
-  const handleZoomIn = () => setZoomScale((prev) => Math.min(prev + 0.15, 2.0));
-  const handleZoomOut = () => setZoomScale((prev) => Math.max(prev - 0.15, 0.7));
-  const handleZoomReset = () => setZoomScale(1);
+  const handleZoomIn = () => setZoomLevel((prev) => Math.min(Number((prev + 0.2).toFixed(2)), 2.5));
+  const handleZoomOut = () => setZoomLevel((prev) => Math.max(Number((prev - 0.2).toFixed(2)), 0.6));
+  const handleZoomReset = () => setZoomLevel(1);
 
   return (
     <AnimatePresence>
@@ -226,9 +236,9 @@ export function PdfModal({ material, onClose }: PdfModalProps) {
           className="relative w-full max-w-5xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl overflow-hidden shadow-2xl flex flex-col h-[92vh]"
         >
           {/* Header Controls */}
-          <div className="flex flex-wrap items-center justify-between px-4 sm:px-6 py-3 bg-slate-100 dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 gap-2 shrink-0">
+          <div className="flex flex-wrap items-center justify-between px-3 sm:px-6 py-2.5 sm:py-3 bg-slate-100 dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 gap-2 shrink-0">
             {/* Title & Subject */}
-            <div className="flex items-center gap-2.5 overflow-hidden min-w-0 max-w-[45%] sm:max-w-[40%]">
+            <div className="flex items-center gap-2 overflow-hidden min-w-0 max-w-[32%] sm:max-w-[40%]">
               <span className="p-1.5 rounded-lg bg-red-500/20 text-red-500 shrink-0">
                 <FileText className="w-4 h-4" />
               </span>
@@ -245,27 +255,30 @@ export function PdfModal({ material, onClose }: PdfModalProps) {
             </div>
 
             {/* Actions: Zoom + Night + Download + Close */}
-            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-              {/* Zoom Controls */}
-              <div className="hidden sm:flex items-center gap-1 bg-slate-200 dark:bg-slate-800 p-0.5 rounded-xl border border-slate-300 dark:border-slate-700">
+            <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+              {/* Zoom Controls (Accessible on Mobile & Desktop) */}
+              <div className="flex items-center gap-0.5 sm:gap-1 bg-slate-200 dark:bg-slate-800 p-0.5 rounded-xl border border-slate-300 dark:border-slate-700">
                 <button
                   onClick={handleZoomIn}
-                  className="p-1.5 text-slate-700 dark:text-slate-200 hover:text-amber-500 rounded-lg"
+                  className="p-1 sm:p-1.5 text-slate-700 dark:text-slate-200 hover:text-amber-500 rounded-lg cursor-pointer transition-colors"
                   title="تكبير"
+                  aria-label="تكبير"
                 >
                   <ZoomIn className="w-3.5 h-3.5" />
                 </button>
                 <button
                   onClick={handleZoomReset}
-                  className="px-1.5 py-0.5 text-[10px] font-mono text-slate-600 dark:text-slate-300 hover:text-amber-500 rounded"
-                  title="إعادة ضبط الحجم"
+                  className="px-1.5 py-0.5 text-[10px] sm:text-xs font-mono text-slate-600 dark:text-slate-300 hover:text-amber-500 rounded cursor-pointer transition-colors"
+                  title="إعادة ضبط الحجم (100%)"
+                  aria-label="إعادة ضبط الحجم"
                 >
-                  {Math.round(zoomScale * 100)}%
+                  {Math.round(zoomLevel * 100)}%
                 </button>
                 <button
                   onClick={handleZoomOut}
-                  className="p-1.5 text-slate-700 dark:text-slate-200 hover:text-amber-500 rounded-lg"
+                  className="p-1 sm:p-1.5 text-slate-700 dark:text-slate-200 hover:text-amber-500 rounded-lg cursor-pointer transition-colors"
                   title="تصغير"
+                  aria-label="تصغير"
                 >
                   <ZoomOut className="w-3.5 h-3.5" />
                 </button>
@@ -274,7 +287,7 @@ export function PdfModal({ material, onClose }: PdfModalProps) {
               {/* PDF Night Reader Inverter */}
               <button
                 onClick={() => setIsNightReader(!isNightReader)}
-                className={`flex items-center gap-1 px-2.5 py-1.5 rounded-xl border text-xs font-bold transition-colors cursor-pointer ${
+                className={`flex items-center gap-1 px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-xl border text-xs font-bold transition-colors cursor-pointer ${
                   isNightReader
                     ? 'bg-amber-500 text-slate-950 border-amber-400'
                     : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-700'
@@ -289,18 +302,18 @@ export function PdfModal({ material, onClose }: PdfModalProps) {
               <button
                 onClick={handleDownload}
                 disabled={isDownloading}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 text-xs font-bold transition-all shadow-sm active:scale-95 disabled:opacity-60 cursor-pointer"
+                className="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 text-xs font-bold transition-all shadow-sm active:scale-95 disabled:opacity-60 cursor-pointer"
                 title="تحميل مباشر إلى الجهاز"
               >
                 {isDownloading ? (
                   <>
                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    <span>جارٍ...</span>
+                    <span className="hidden xs:inline">جارٍ...</span>
                   </>
                 ) : (
                   <>
                     <Download className="w-3.5 h-3.5" />
-                    <span>تحميل مباشر</span>
+                    <span className="hidden xs:inline">تحميل مباشر</span>
                   </>
                 )}
               </button>
@@ -319,7 +332,7 @@ export function PdfModal({ material, onClose }: PdfModalProps) {
           {/* Canvas Scroll Viewer Area with Anti-Leak Repeating Watermark */}
           <div
             ref={containerRef}
-            className="flex-1 w-full bg-slate-200/90 dark:bg-slate-950 relative overflow-y-auto overflow-x-hidden p-2 sm:p-5 flex flex-col items-center"
+            className="flex-1 w-full bg-slate-200/90 dark:bg-slate-950 relative overflow-y-auto overflow-x-auto p-2 sm:p-5 flex flex-col items-center"
           >
             {/* Dynamic Repeating Watermark Layer */}
             <div className="absolute inset-0 z-20 pointer-events-none select-none flex flex-wrap items-center justify-around overflow-hidden opacity-[0.07] dark:opacity-[0.05] rotate-[-22deg] scale-125">
@@ -343,7 +356,7 @@ export function PdfModal({ material, onClose }: PdfModalProps) {
                   جاري إعداد صفحات ملف الـ PDF...
                 </h4>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                  عرض بدقة عالية ومباشر بدون زر فتح خارجي
+                  عرض بدقة فائقة الوضوح ومباشر بدون زر فتح خارجي
                 </p>
               </div>
             )}
@@ -381,14 +394,21 @@ export function PdfModal({ material, onClose }: PdfModalProps) {
 
             {/* Render All Pages as Native HTML5 Canvases */}
             {pdfDoc && numPages > 0 && (
-              <div className="w-full flex flex-col items-center max-w-4xl z-10">
+              <div
+                className="w-full flex flex-col items-center z-10 transition-all duration-200"
+                style={{
+                  width: zoomLevel > 1 ? `${Math.round(zoomLevel * 100)}%` : '100%',
+                  maxWidth: zoomLevel > 1 ? `${Math.round(zoomLevel * 850)}px` : '850px',
+                }}
+              >
                 {Array.from({ length: numPages }).map((_, index) => (
                   <PdfPageCanvas
                     key={index + 1}
                     pdfDoc={pdfDoc}
                     pageNumber={index + 1}
-                    zoomScale={zoomScale}
+                    zoomLevel={zoomLevel}
                     isNightReader={isNightReader}
+                    watermarkText={fullWatermarkText}
                   />
                 ))}
               </div>
