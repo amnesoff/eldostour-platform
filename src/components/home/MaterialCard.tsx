@@ -14,6 +14,7 @@ import {
   Flame,
   Loader2,
   Eye,
+  Flag,
 } from 'lucide-react';
 import { Material } from '@/types';
 import { isNewItem, formatDateArabic, formatFileSize } from '@/lib/utils';
@@ -24,12 +25,14 @@ interface MaterialCardProps {
   material: Material;
   onOpenVideo?: (material: Material) => void;
   onOpenPdf?: (material: Material) => void;
+  onReport?: (material: Material) => void;
 }
 
 export function MaterialCard({
   material,
   onOpenVideo,
   onOpenPdf,
+  onReport,
 }: MaterialCardProps) {
   const [likes, setLikes] = useState(material.likes_count || 0);
   const [hasLiked, setHasLiked] = useState(false);
@@ -197,26 +200,42 @@ export function MaterialCard({
 
       {/* Card Actions Footer */}
       <div className="px-4 sm:px-5 py-3 bg-slate-50/70 dark:bg-slate-950/50 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3">
-        {/* Like Button */}
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            handleLike();
-          }}
-          disabled={hasLiked}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${
-            hasLiked
-              ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30'
-              : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-amber-400'
-          }`}
-          title={hasLiked ? 'لقد سجلت إعجابك' : 'تسجيل الإعجاب'}
-        >
-          <ThumbsUp className={`w-3.5 h-3.5 ${hasLiked ? 'fill-current' : ''}`} />
-          <span>مفيد</span>
-          <span className="bg-slate-100 dark:bg-slate-700/60 px-1.5 py-0.5 rounded-md text-[10px]">
-            {likes}
-          </span>
-        </button>
+        {/* Like & Report Buttons */}
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              handleLike();
+            }}
+            disabled={hasLiked}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${
+              hasLiked
+                ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30'
+                : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-amber-400'
+            }`}
+            title={hasLiked ? 'لقد سجلت إعجابك' : 'تسجيل الإعجاب'}
+          >
+            <ThumbsUp className={`w-3.5 h-3.5 ${hasLiked ? 'fill-current' : ''}`} />
+            <span>مفيد</span>
+            <span className="bg-slate-100 dark:bg-slate-700/60 px-1.5 py-0.5 rounded-md text-[10px]">
+              {likes}
+            </span>
+          </button>
+
+          {onReport && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onReport(material);
+              }}
+              className="p-1.5 rounded-xl text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 transition-colors"
+              title="إبلاغ عن خطأ في هذه المحاضرة 🚩"
+            >
+              <Flag className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
 
         {/* Action Button: Direct One-Tap Programmatic Download or Video Player */}
         {isPdf ? (

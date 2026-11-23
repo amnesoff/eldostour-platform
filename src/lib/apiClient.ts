@@ -115,6 +115,7 @@ export async function adminChangeSuperCredentials(newPassword?: string, newPin?:
 
 export async function adminUpdateVault(vaultSettings: {
   vault_enabled: boolean;
+  vault_password?: string;
   numeric_password?: string;
   complex_password?: string;
 }) {
@@ -124,10 +125,39 @@ export async function adminUpdateVault(vaultSettings: {
   });
 }
 
-export async function adminUnlockVault(numericPassword?: string, complexPassword?: string) {
+export async function adminUnlockVault(vaultPassword?: string, complexPassword?: string) {
   return adminFetch('/api/admin/db', {
     method: 'POST',
-    body: JSON.stringify({ action: 'unlock_vault', numericPassword, complexPassword }),
+    body: JSON.stringify({
+      action: 'unlock_vault',
+      vaultPassword: vaultPassword || 'AlDostour@2006',
+      numericPassword: vaultPassword,
+      complexPassword,
+    }),
+  });
+}
+
+export async function adminGetFullBackup() {
+  return adminFetch('/api/admin/db', {
+    method: 'POST',
+    body: JSON.stringify({ action: 'get_full_backup' }),
+  });
+}
+
+export async function adminGetBugReports() {
+  return adminFetch('/api/reports', { method: 'GET' });
+}
+
+export async function adminUpdateBugReport(id: string, status: 'pending' | 'resolved') {
+  return adminFetch('/api/reports', {
+    method: 'PATCH',
+    body: JSON.stringify({ id, status }),
+  });
+}
+
+export async function adminDeleteBugReport(id: string) {
+  return adminFetch(`/api/reports?id=${encodeURIComponent(id)}`, {
+    method: 'DELETE',
   });
 }
 
@@ -192,7 +222,8 @@ export async function adminDeleteStudent(studentId: string) {
 // -----------------------------------------------------------------
 
 export async function studentLogin(data: {
-  email: string;
+  phone?: string;
+  email?: string;
   password: string;
   deviceFingerprint?: string;
   deviceInfo?: string;
@@ -203,6 +234,53 @@ export async function studentLogin(data: {
     body: JSON.stringify({ action: 'login', ...data }),
   });
   return res.json();
+}
+
+export async function studentMarkWelcomeShown(studentId: string) {
+  const res = await fetch('/api/auth/student', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'mark_welcome_shown', student_id: studentId }),
+  });
+  return res.json();
+}
+
+export async function studentSubmitBugReport(payload: {
+  reportType: 'quiz' | 'lecture' | 'other';
+  targetTitle: string;
+  targetId?: string;
+  description: string;
+  studentName?: string;
+  studentPhone?: string;
+}) {
+  const res = await fetch('/api/reports', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  return res.json();
+}
+
+export async function studentHeartbeatPresence(clientId: string, studentName?: string) {
+  try {
+    const res = await fetch('/api/presence', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ clientId, studentName }),
+    });
+    return res.json();
+  } catch {
+    return { success: false, count: 1 };
+  }
+}
+
+export async function studentGetPresence() {
+  try {
+    const res = await fetch('/api/presence', { method: 'GET' });
+    return res.json();
+  } catch {
+    return { success: false, count: 1 };
+  }
 }
 
 export async function studentRegister(data: RegisterStudentData & { deviceFingerprint?: string; deviceInfo?: string }) {

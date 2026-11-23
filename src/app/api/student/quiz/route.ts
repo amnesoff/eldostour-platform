@@ -49,7 +49,7 @@ export async function GET(req: NextRequest) {
 // POST: Server-side Exam Grading & Submission
 export async function POST(req: NextRequest) {
   const ip = getClientIp(req);
-  const rateLimit = checkRateLimit(ip, 8, 60);
+  const rateLimit = checkRateLimit(ip, 6, 60);
 
   if (!rateLimit.allowed) {
     return NextResponse.json(

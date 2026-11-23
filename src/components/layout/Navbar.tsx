@@ -23,6 +23,7 @@ import { useTheme } from '@/context/ThemeContext';
 import { useStudentAuth } from '@/context/StudentAuthContext';
 import { TEAM_CREDITS, LEADERSHIP_BAR_TEXT, COLLEGE_NAME } from '@/lib/constants';
 import { DigitalStudentIdCard } from '@/components/tools/DigitalStudentIdCard';
+import { LivePresenceBadge } from '@/components/tools/LivePresenceBadge';
 
 interface NavbarProps {
   onOpenSearch?: () => void;
@@ -80,9 +81,14 @@ export function Navbar({ onOpenSearch }: NavbarProps) {
         {/* Main Navbar */}
         <div className="max-w-7xl mx-auto px-2 sm:px-6 lg:px-8 h-16 sm:h-20 flex items-center justify-between gap-1.5 sm:gap-2">
           {/* Brand Logo & College Title */}
-          <Link href="/" className="flex items-center gap-1.5 sm:gap-2 group min-w-0 shrink">
-            <AnimatedLogo size="md" />
-          </Link>
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+            <Link href="/" className="flex items-center gap-1.5 sm:gap-2 group min-w-0 shrink">
+              <AnimatedLogo size="md" />
+            </Link>
+            <div className="hidden sm:block">
+              <LivePresenceBadge />
+            </div>
+          </div>
 
           {/* Quick Actions Bar */}
           <div className="flex items-center gap-1 sm:gap-2 shrink-0">

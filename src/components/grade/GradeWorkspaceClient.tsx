@@ -13,7 +13,12 @@ import {
   Award,
   RefreshCw,
   ChevronLeft,
+  Lock,
+  Flag,
+  UserPlus,
 } from 'lucide-react';
+import { useStudentAuth } from '@/context/StudentAuthContext';
+import { BugReportModal } from '@/components/tools/BugReportModal';
 import { Navbar } from '@/components/layout/Navbar';
 import { Footer } from '@/components/layout/Footer';
 import { BackgroundWatermark } from '@/components/ui/BackgroundWatermark';
@@ -78,6 +83,34 @@ export default function GradeWorkspaceClient({ gradeId }: GradeWorkspaceClientPr
   const [activeVideo, setActiveVideo] = useState<Material | null>(null);
   const [activePdf, setActivePdf] = useState<Material | null>(null);
   const [activeQuiz, setActiveQuiz] = useState<Quiz | null>(null);
+  const [reportingMaterial, setReportingMaterial] = useState<Material | null>(null);
+
+  // Student Auth & Guest Mode
+  const { student, isGuest, openAuthModal } = useStudentAuth();
+
+  const handleOpenPdf = (mat: Material) => {
+    if (isGuest) {
+      openAuthModal('register');
+      return;
+    }
+    setActivePdf(mat);
+  };
+
+  const handleOpenVideo = (mat: Material) => {
+    if (isGuest) {
+      openAuthModal('register');
+      return;
+    }
+    setActiveVideo(mat);
+  };
+
+  const handleOpenQuiz = (q: Quiz) => {
+    if (isGuest) {
+      openAuthModal('register');
+      return;
+    }
+    setActiveQuiz(q);
+  };
 
   // Fallback synthesized covers if no subject_covers exist in DB yet
   const displayCovers: SubjectCover[] = useMemo(() => {
@@ -150,6 +183,10 @@ export default function GradeWorkspaceClient({ gradeId }: GradeWorkspaceClientPr
   };
 
   const handleSelectCover = (cov: SubjectCover | null) => {
+    if (cov && isGuest) {
+      openAuthModal('register');
+      return;
+    }
     setSelectedCover(cov);
     setSearchQuery('');
     setMultiSelectMode(false);
@@ -524,6 +561,32 @@ export default function GradeWorkspaceClient({ gradeId }: GradeWorkspaceClientPr
               <Search className="w-4 h-4 text-slate-400 absolute right-4 top-1/2 -translate-y-1/2" />
             </div>
 
+            {/* Frosted Blur Guest Notice Banner */}
+            {isGuest && (
+              <div
+                onClick={() => openAuthModal('register')}
+                className="p-5 sm:p-6 rounded-3xl bg-slate-900/95 dark:bg-slate-950/95 backdrop-blur-md border-2 border-amber-500/40 text-center shadow-2xl cursor-pointer hover:border-amber-400 transition-all group my-2"
+              >
+                <div className="max-w-md mx-auto space-y-2.5">
+                  <div className="w-12 h-12 rounded-2xl bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center justify-center mx-auto shadow-md group-hover:scale-110 transition-transform">
+                    <Lock className="w-6 h-6 animate-bounce" />
+                  </div>
+                  <h3 className="text-base sm:text-lg font-black text-white">
+                    للاستفادة من المحاضرات والملخصات يرجى تسجيل الدخول أو إنشاء حساب
+                  </h3>
+                  <p className="text-xs text-slate-300 leading-relaxed">
+                    أنت في وضع معاينة الزائر (Guest Preview). انضم إلينا وسجل الآن برقم هاتفك للوصول الكامل لكافة المحاضرات والمذكرات وبنك الأسئلة ⚖️
+                  </p>
+                  <div className="pt-1">
+                    <span className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black text-xs shadow-lg shadow-amber-500/20">
+                      <UserPlus className="w-3.5 h-3.5" />
+                      <span>انضم لينا واعمل صفحة الآن</span>
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Subject Covers Grid (Large Cards with YouTube-Style Animated Previews) */}
             {isLoading ? (
               <div className="py-20 flex flex-col items-center justify-center text-slate-400 gap-3">
@@ -790,8 +853,9 @@ export default function GradeWorkspaceClient({ gradeId }: GradeWorkspaceClientPr
 
                         <MaterialCard
                           material={material}
-                          onOpenPdf={(mat) => setActivePdf(mat)}
-                          onOpenVideo={(mat) => setActiveVideo(mat)}
+                          onOpenPdf={(mat) => handleOpenPdf(mat)}
+                          onOpenVideo={(mat) => handleOpenVideo(mat)}
+                          onReport={(mat) => setReportingMaterial(mat)}
                         />
                       </div>
                     ))}
@@ -819,8 +883,9 @@ export default function GradeWorkspaceClient({ gradeId }: GradeWorkspaceClientPr
                       <MaterialCard
                         key={material.id}
                         material={material}
-                        onOpenVideo={(mat) => setActiveVideo(mat)}
-                        onOpenPdf={(mat) => setActivePdf(mat)}
+                        onOpenVideo={(mat) => handleOpenVideo(mat)}
+                        onOpenPdf={(mat) => handleOpenPdf(mat)}
+                        onReport={(mat) => setReportingMaterial(mat)}
                       />
                     ))}
                   </div>
@@ -899,7 +964,7 @@ export default function GradeWorkspaceClient({ gradeId }: GradeWorkspaceClientPr
                           </span>
 
                           <button
-                            onClick={() => setActiveQuiz(quiz)}
+                            onClick={() => handleOpenQuiz(quiz)}
                             className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs shadow-md shadow-purple-600/20 transition-all active:scale-95"
                           >
                             <span>بدء الاختبار</span>
@@ -942,6 +1007,15 @@ export default function GradeWorkspaceClient({ gradeId }: GradeWorkspaceClientPr
           }}
         />
       )}
+
+      {/* Student Bug & Typo Report Modal */}
+      <BugReportModal
+        isOpen={Boolean(reportingMaterial)}
+        onClose={() => setReportingMaterial(null)}
+        reportType="lecture"
+        targetId={reportingMaterial?.id || ''}
+        targetTitle={reportingMaterial?.title || 'محاضرة'}
+      />
 
       {/* Interactive Peeking Character Widget */}
       <ThemeCharacterWidget />

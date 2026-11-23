@@ -8,11 +8,13 @@ import {
   User,
   ArrowRight,
   Loader2,
+  Flag,
 } from 'lucide-react';
 import { Quiz, QuizQuestion } from '@/types';
 import { studentSubmitQuiz } from '@/lib/apiClient';
 import { AnimatedLogo } from '@/components/ui/AnimatedLogo';
 import { COLLEGE_NAME } from '@/lib/constants';
+import { BugReportModal } from '@/components/tools/BugReportModal';
 
 interface QuizPlayerModalProps {
   quiz: Quiz | null;
@@ -34,6 +36,7 @@ export function QuizPlayerModal({
   const [finalScore, setFinalScore] = useState(0);
   const [totalQuestions, setTotalQuestions] = useState(0);
   const [timeRemaining, setTimeRemaining] = useState(15 * 60);
+  const [isBugReportOpen, setIsBugReportOpen] = useState(false);
 
   // 1. Persistent Student Profile & Mid-Exam State Restoration on Refresh (F5)
   useEffect(() => {
@@ -337,12 +340,22 @@ export function QuizPlayerModal({
                 </div>
               </div>
 
-              {/* Next / Submit Button */}
-              <div className="mt-6 pt-4 border-t border-slate-200 dark:border-slate-800 flex justify-end">
+              {/* Next / Submit Button + Bug Report */}
+              <div className="mt-6 pt-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={() => setIsBugReportOpen(true)}
+                  className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-amber-500 transition-colors p-2 cursor-pointer"
+                  title="إبلاغ عن خطأ في السؤال أو الاختيارات"
+                >
+                  <Flag className="w-3.5 h-3.5 text-rose-400" />
+                  <span>إبلاغ عن خطأ 🚩</span>
+                </button>
+
                 <button
                   onClick={handleNextOrFinish}
                   disabled={!answers[currentQIndex] || isSubmitting}
-                  className="px-6 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs flex items-center gap-2 disabled:opacity-50 shadow-md"
+                  className="px-6 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs flex items-center gap-2 disabled:opacity-50 shadow-md min-h-[44px]"
                 >
                   {isSubmitting ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
@@ -454,6 +467,15 @@ export function QuizPlayerModal({
           )}
         </motion.div>
       </div>
+
+      {/* Bug Report Modal */}
+      <BugReportModal
+        isOpen={isBugReportOpen}
+        onClose={() => setIsBugReportOpen(false)}
+        reportType="quiz"
+        targetId={questions[currentQIndex]?.id || ''}
+        targetTitle={`سؤال رقم ${currentQIndex + 1} (${quiz?.title || ''}): ${questions[currentQIndex]?.question_text?.slice(0, 40) || ''}...`}
+      />
     </AnimatePresence>
   );
 }

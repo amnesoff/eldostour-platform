@@ -10,6 +10,7 @@ import {
   studentUpdateProfile,
   studentLogout,
   studentCheckSession,
+  studentMarkWelcomeShown,
 } from '@/lib/apiClient';
 import { getDeviceFingerprint, getDeviceInfoString } from '@/lib/authUtils';
 import { MandatoryPasswordChangeModal } from '@/components/auth/MandatoryPasswordChangeModal';
@@ -25,9 +26,11 @@ interface StudentAuthContextType {
   openAuthModal: (defaultMode?: 'login' | 'register' | 'guest') => void;
   closeAuthModal: () => void;
   modalDefaultMode: 'login' | 'register' | 'guest';
-  login: (email: string, password: string) => Promise<{ success: boolean; error?: string; pendingApproval?: boolean }>;
+  login: (phoneOrEmail: string, password: string) => Promise<{ success: boolean; error?: string; pendingApproval?: boolean }>;
   register: (data: RegisterStudentData) => Promise<{ success: boolean; error?: string; pendingApproval?: boolean; student?: Student }>;
   registerGuest: (data: GuestStudentData) => Promise<{ success: boolean; error?: string }>;
+  enterGuestPreviewMode: () => void;
+  markWelcomeShown: () => Promise<void>;
   logout: () => void;
   changePassword: (newPassword: string) => Promise<{ success: boolean; error?: string }>;
   updateStudentLocally: (updated: Student) => void;
@@ -142,17 +145,21 @@ export function StudentAuthProvider({ children }: { children: React.ReactNode })
     }
   };
 
-  // Secure Server-Side Login
+  // Secure Server-Side Login (Supports Phone or Legacy Email)
   const login = async (
-    email: string,
+    phoneOrEmail: string,
     password: string
   ): Promise<{ success: boolean; error?: string; pendingApproval?: boolean }> => {
     try {
       const currentFingerprint = await getDeviceFingerprint();
       const currentDeviceInfo = getDeviceInfoString();
 
+      const cleanInput = phoneOrEmail.trim().replace(/[\s-]/g, '');
+      const isEgyptianPhone = /^01[0125]\d{8}$/.test(cleanInput);
+
       const res = await studentLogin({
-        email,
+        phone: isEgyptianPhone ? cleanInput : cleanInput,
+        email: !isEgyptianPhone ? phoneOrEmail.trim().toLowerCase() : undefined,
         password,
         deviceFingerprint: currentFingerprint,
         deviceInfo: currentDeviceInfo,
@@ -175,6 +182,36 @@ export function StudentAuthProvider({ children }: { children: React.ReactNode })
       return { success: true };
     } catch (err: any) {
       return { success: false, error: err?.message || 'حدث خطأ أثناء تسجيل الدخول' };
+    }
+  };
+
+  // Zero-Database-Writes Instant Guest Preview Mode
+  const enterGuestPreviewMode = () => {
+    const guestUser: Student = {
+      id: 'guest-preview',
+      student_code: 'GUEST',
+      full_name: 'زائر المنصة',
+      gender: 'male',
+      academic_year: 1,
+      is_guest: true,
+      created_at: new Date().toISOString(),
+    };
+    setStudent(guestUser);
+    setIsGuest(true);
+    syncStorage(guestUser, true);
+    setIsAuthModalOpen(false);
+  };
+
+  // Mark Welcome Celebration Shown
+  const markWelcomeShown = async () => {
+    if (!student || student.is_guest) return;
+    try {
+      const updated = { ...student, welcome_shown: true };
+      setStudent(updated);
+      syncStorage(updated, false);
+      await studentMarkWelcomeShown(student.id);
+    } catch (err) {
+      console.warn('Could not mark welcome shown:', err);
     }
   };
 
@@ -310,6 +347,8 @@ export function StudentAuthProvider({ children }: { children: React.ReactNode })
         login,
         register,
         registerGuest,
+        enterGuestPreviewMode,
+        markWelcomeShown,
         logout,
         changePassword,
         updateStudentLocally,

@@ -78,18 +78,15 @@ export function StudentsDirectory({ adminSession }: StudentsDirectoryProps) {
   const [vaultSettings, setVaultSettings] = useState<AdminSecuritySettings | null>(null);
   const [isVaultUnlocked, setIsVaultUnlocked] = useState(false);
   const [isConfiguringVault, setIsConfiguringVault] = useState(false);
-  const [vaultUnlockPassword1, setVaultUnlockPassword1] = useState('');
-  const [vaultUnlockPassword2, setVaultUnlockPassword2] = useState('');
-  const [showUnlockPass1, setShowUnlockPass1] = useState(false);
-  const [showUnlockPass2, setShowUnlockPass2] = useState(false);
+  const [vaultPassword, setVaultPassword] = useState('AlDostour@2006');
+  const [showVaultPassword, setShowVaultPassword] = useState(false);
   const [vaultUnlockError, setVaultUnlockError] = useState('');
   const [isUnlocking, setIsUnlocking] = useState(false);
+  const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
 
-  // Vault Setup Modal State
-  const [setupNumericPassword, setSetupNumericPassword] = useState('');
-  const [setupComplexPassword, setSetupComplexPassword] = useState('');
-  const [setupConfirmNumeric, setSetupConfirmNumeric] = useState('');
-  const [setupConfirmComplex, setSetupConfirmComplex] = useState('');
+  // Vault Setup Modal State (Single Password)
+  const [setupSinglePassword, setSetupSinglePassword] = useState('AlDostour@2006');
+  const [setupConfirmPassword, setSetupConfirmPassword] = useState('AlDostour@2006');
   const [setupError, setSetupError] = useState('');
   const [setupSuccess, setSetupSuccess] = useState(false);
   const [isSavingVaultSetup, setIsSavingVaultSetup] = useState(false);
@@ -214,11 +211,10 @@ export function StudentsDirectory({ adminSession }: StudentsDirectoryProps) {
     setIsVaultUnlocked(false);
     sessionStorage.removeItem('eldostour_vault_unlocked');
     sessionStorage.removeItem('eldostour_vault_unlock_time');
-    setVaultUnlockPassword1('');
-    setVaultUnlockPassword2('');
+    setVaultPassword('AlDostour@2006');
   };
 
-  // Handle Vault Unlock
+  // Handle Vault Unlock (Single Password, default: AlDostour@2006)
   const handleUnlockVault = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!vaultSettings?.vault_enabled) {
@@ -235,56 +231,42 @@ export function StudentsDirectory({ adminSession }: StudentsDirectoryProps) {
     setVaultUnlockError('');
 
     try {
-      const res = await adminUnlockVault(vaultUnlockPassword1.trim(), vaultUnlockPassword2.trim());
+      const entered = vaultPassword.trim() || 'AlDostour@2006';
+      const res = await adminUnlockVault(entered);
 
       if (res.success && res.unlocked) {
         setIsVaultUnlocked(true);
         lastVaultActivityRef.current = Date.now();
         sessionStorage.setItem('eldostour_vault_unlocked', 'true');
         sessionStorage.setItem('eldostour_vault_unlock_time', Date.now().toString());
-        setVaultUnlockPassword1('');
-        setVaultUnlockPassword2('');
       } else {
-        setVaultUnlockError('إحدى كلمتي المرور أو كلاهما غير صحيحة. يرجى التأكد من كلمة مرور الأرقام وكلمة مرور الرموز.');
+        setVaultUnlockError(res?.error || 'كلمة مرور الخزنة غير صحيحة (الافتراضية: AlDostour@2006)');
         await logAdminSecurityEvent(
           'vault_unlock_failed',
           adminSession?.username || 'Admin',
-          'محاولة فاشلة لفتح خزنة بيانات الطلاب (كلمات مرور غير متطابقة)'
+          'محاولة فاشلة لفتح خزنة بيانات الطلاب (كلمة مرور غير صحيحة)'
         );
       }
     } catch (err: any) {
       console.warn('Vault unlock error:', err);
-      setVaultUnlockError('حدث خطأ أثناء التحقق من كلمات المرور، يرجى المحاولة لاحقاً');
+      setVaultUnlockError('حدث خطأ أثناء التحقق من كلمة المرور، يرجى المحاولة لاحقاً');
     } finally {
       setIsUnlocking(false);
     }
   };
 
-  // Handle Setup Double-Password Vault
+  // Handle Setup Single-Password Vault
   const handleSaveVaultSetup = async (e: React.FormEvent) => {
     e.preventDefault();
     setSetupError('');
     setSetupSuccess(false);
 
-    // Validate Password 1 (Numeric)
-    const val1 = validateVaultNumericPassword(setupNumericPassword);
-    if (!val1.isValid) {
-      setSetupError(val1.error || 'كلمة مرور الأرقام غير صحيحة');
+    if (setupSinglePassword.length < 6) {
+      setSetupError('كلمة مرور الخزنة يجب ألا تقل عن 6 خانات');
       return;
     }
-    if (setupNumericPassword !== setupConfirmNumeric) {
-      setSetupError('تأكيد كلمة مرور الأرقام غير متطابق');
-      return;
-    }
-
-    // Validate Password 2 (Complex)
-    const val2 = validateVaultComplexPassword(setupComplexPassword);
-    if (!val2.isValid) {
-      setSetupError(val2.error || 'كلمة مرور الحروف والرموز غير صحيحة');
-      return;
-    }
-    if (setupComplexPassword !== setupConfirmComplex) {
-      setSetupError('تأكيد كلمة مرور الحروف والرموز غير متطابق');
+    if (setupSinglePassword !== setupConfirmPassword) {
+      setSetupError('تأكيد كلمة المرور غير متطابق');
       return;
     }
 
@@ -293,8 +275,7 @@ export function StudentsDirectory({ adminSession }: StudentsDirectoryProps) {
     try {
       const res = await adminUpdateVault({
         vault_enabled: true,
-        numeric_password: setupNumericPassword.trim(),
-        complex_password: setupComplexPassword.trim(),
+        vault_password: setupSinglePassword.trim(),
       });
 
       if (!res.success) throw new Error(res.error || 'فشل حفظ إعدادات حماية الخزنة');
@@ -304,10 +285,6 @@ export function StudentsDirectory({ adminSession }: StudentsDirectoryProps) {
 
       setTimeout(() => {
         setIsConfiguringVault(false);
-        setSetupNumericPassword('');
-        setSetupComplexPassword('');
-        setSetupConfirmNumeric('');
-        setSetupConfirmComplex('');
         setSetupSuccess(false);
       }, 1500);
     } catch (err: any) {
@@ -379,6 +356,60 @@ export function StudentsDirectory({ adminSession }: StudentsDirectoryProps) {
     }
   };
 
+  const toggleSelectStudent = (id: string) => {
+    setSelectedStudentIds((prev) =>
+      prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
+    );
+  };
+
+  const handleSelectAllFiltered = () => {
+    if (selectedStudentIds.length === filteredStudents.length) {
+      setSelectedStudentIds([]);
+    } else {
+      setSelectedStudentIds(filteredStudents.map((s) => s.id));
+    }
+  };
+
+  const handleApproveSelected = async () => {
+    if (!canManageStudents) {
+      alert('ليس لديك صلاحية لاعتماد وتعديل حسابات الطلاب');
+      return;
+    }
+
+    const idsToApprove = selectedStudentIds.length > 0
+      ? selectedStudentIds
+      : filteredStudents.filter((s) => !s.is_guest && s.is_approved === false).map((s) => s.id);
+
+    if (idsToApprove.length === 0) {
+      alert('يرجى تحديد طلاب للاعتماد أولاً');
+      return;
+    }
+
+    if (!window.confirm(`هل أنت متأكد من تفعيل واعتماد (${idsToApprove.length}) طالب محدد دفعة واحدة؟`)) {
+      return;
+    }
+
+    setIsBulkApproving(true);
+    try {
+      const res = await adminBulkApproveStudents(idsToApprove);
+      if (!res.success) throw new Error(res.error || 'فشل الاعتماد');
+
+      setStudents((prev) =>
+        prev.map((s) =>
+          idsToApprove.includes(s.id)
+            ? { ...s, is_approved: true, is_verified: true, verification_status: 'approved' }
+            : s
+        )
+      );
+      setSelectedStudentIds([]);
+      alert(`تم تفعيل واعتماد ${idsToApprove.length} طالب بنجاح! ✅`);
+    } catch (err: any) {
+      alert(`فشل الاعتماد: ${err?.message || 'خطأ غير متوقع'}`);
+    } finally {
+      setIsBulkApproving(false);
+    }
+  };
+
   // Filtered Students
   const filteredStudents = useMemo(() => {
     let result = students.filter((s) => {
@@ -399,14 +430,18 @@ export function StudentsDirectory({ adminSession }: StudentsDirectoryProps) {
       // Gender filter
       if (selectedGender !== 'all' && s.gender !== selectedGender) return false;
 
-      // Search query (name, email, code, phone)
+      // Quick Search query: last 4 digits of phone, full phone, name, student code
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim();
+        const cleanDigits = q.replace(/[\s-]/g, '');
         const matchesName = s.full_name?.toLowerCase().includes(q);
         const matchesCode = s.student_code?.toLowerCase().includes(q);
         const matchesEmail = s.email?.toLowerCase().includes(q);
-        const matchesPhone = s.phone?.includes(q);
-        return matchesName || matchesCode || matchesEmail || matchesPhone;
+        const sPhoneClean = s.phone?.replace(/[\s-]/g, '') || '';
+        const matchesPhone = Boolean(
+          cleanDigits && (sPhoneClean.includes(cleanDigits) || sPhoneClean.endsWith(cleanDigits))
+        );
+        return Boolean(matchesName || matchesCode || matchesEmail || matchesPhone);
       }
 
       return true;
@@ -939,60 +974,34 @@ export function StudentsDirectory({ adminSession }: StudentsDirectoryProps) {
               <h3 className="text-xl sm:text-2xl font-black text-white">
                 خزنة بيانات الطلاب مشفرة ومقفلة 🔒
               </h3>
-              <p className="text-xs sm:text-sm text-slate-400 leading-relaxed">
-                تم تفعيل نظام الحماية المزدوجة (Double-Password Vault). للاطلاع على أرقام هواتف الطلاب والبيانات الشخصية
-                وتصدير السجلات، يرجى إدخال كلمتي المرور الخاصة بالمشرفين.
+              <p className="text-xs sm:text-sm text-slate-400 leading-relaxed max-w-md mx-auto">
+                أدخل كلمة مرور الخزنة الموحدة للاطلاع على أرقام هواتف الطلاب والبيانات الشخصية الكاملة
+                وتصدير السجلات (كلمة المرور الافتراضية: <span className="font-mono text-amber-400 font-bold">AlDostour@2006</span>)
               </p>
             </div>
 
-            {/* Unlock Form */}
+            {/* Unlock Form (Single Password) */}
             <form onSubmit={handleUnlockVault} className="space-y-4 text-right">
-              {/* Password 1: Numbers */}
               <div className="space-y-1.5">
                 <label className="block text-xs font-bold text-slate-300">
-                  1. كلمة مرور الأرقام السرية (Password 1):
+                  كلمة مرور الخزنة المشفرة:
                 </label>
                 <div className="relative">
                   <input
-                    type={showUnlockPass1 ? 'text' : 'password'}
-                    value={vaultUnlockPassword1}
-                    onChange={(e) => setVaultUnlockPassword1(e.target.value)}
-                    placeholder="أدخل رمز الأرقام السري..."
+                    type={showVaultPassword ? 'text' : 'password'}
+                    value={vaultPassword}
+                    onChange={(e) => setVaultPassword(e.target.value)}
+                    placeholder="AlDostour@2006"
                     required
                     dir="ltr"
-                    className="w-full h-11 pr-4 pl-11 rounded-xl bg-slate-950 border border-slate-700 text-sm font-mono text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 text-right"
+                    className="w-full min-h-[44px] h-12 pr-4 pl-12 rounded-xl bg-slate-950 border border-slate-700 text-sm font-mono text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 text-right"
                   />
                   <button
                     type="button"
-                    onClick={() => setShowUnlockPass1(!showUnlockPass1)}
-                    className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+                    onClick={() => setShowVaultPassword(!showVaultPassword)}
+                    className="absolute left-3.5 top-1/2 -translate-y-1/2 p-1.5 text-slate-500 hover:text-slate-300 cursor-pointer"
                   >
-                    {showUnlockPass1 ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-              </div>
-
-              {/* Password 2: Complex */}
-              <div className="space-y-1.5">
-                <label className="block text-xs font-bold text-slate-300">
-                  2. كلمة مرور الحروف والرموز المعقدة (Password 2):
-                </label>
-                <div className="relative">
-                  <input
-                    type={showUnlockPass2 ? 'text' : 'password'}
-                    value={vaultUnlockPassword2}
-                    onChange={(e) => setVaultUnlockPassword2(e.target.value)}
-                    placeholder="أدخل كلمة مرور الرموز والحروف..."
-                    required
-                    dir="ltr"
-                    className="w-full h-11 pr-4 pl-11 rounded-xl bg-slate-950 border border-slate-700 text-sm font-mono text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 text-right"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowUnlockPass2(!showUnlockPass2)}
-                    className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
-                  >
-                    {showUnlockPass2 ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    {showVaultPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
               </div>
@@ -1007,7 +1016,7 @@ export function StudentsDirectory({ adminSession }: StudentsDirectoryProps) {
               <button
                 type="submit"
                 disabled={isUnlocking}
-                className="w-full h-12 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black text-sm shadow-xl shadow-amber-500/20 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer"
+                className="w-full min-h-[44px] h-12 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black text-sm shadow-xl shadow-amber-500/20 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer"
               >
                 {isUnlocking ? (
                   <Loader2 className="w-5 h-5 animate-spin" />
@@ -1028,6 +1037,36 @@ export function StudentsDirectory({ adminSession }: StudentsDirectoryProps) {
       ) : (
         /* STUDENTS TABLE VIEW */
         <div className="rounded-2xl bg-slate-900 border border-slate-800 overflow-hidden shadow-xl">
+          {/* Selected Students Bulk Action Bar */}
+          {selectedStudentIds.length > 0 && canManageStudents && (
+            <div className="p-3.5 bg-gradient-to-r from-amber-500/20 via-amber-500/10 to-transparent border-b border-amber-500/30 flex items-center justify-between gap-3 text-right">
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping" />
+                <span className="text-xs font-bold text-amber-300">
+                  تم تحديد ({selectedStudentIds.length}) طالب من السجل
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleApproveSelected}
+                  disabled={isBulkApproving}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-md active:scale-95 disabled:opacity-50 min-h-[44px]"
+                >
+                  {isBulkApproving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                  <span>تفعيل المحددين دفعة واحدة ✅ ({selectedStudentIds.length})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedStudentIds([])}
+                  className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs transition-colors cursor-pointer min-h-[44px]"
+                >
+                  إلغاء التحديد
+                </button>
+              </div>
+            </div>
+          )}
+
           {isLoading ? (
             <div className="p-12 text-center text-slate-400">
               <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-amber-500" />
@@ -1044,7 +1083,7 @@ export function StudentsDirectory({ adminSession }: StudentsDirectoryProps) {
                   </p>
                   <button
                     onClick={() => fetchStudents(true)}
-                    className="mt-4 px-4 py-2 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 text-xs font-bold transition-all inline-flex items-center gap-2 cursor-pointer border border-rose-500/30"
+                    className="mt-4 px-4 py-2 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 text-xs font-bold transition-all inline-flex items-center gap-2 cursor-pointer border border-rose-500/30 min-h-[44px]"
                   >
                     <RefreshCw className="w-3.5 h-3.5" />
                     <span>إعادة المحاولة الآن</span>
@@ -1061,358 +1100,584 @@ export function StudentsDirectory({ adminSession }: StudentsDirectoryProps) {
               )}
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs text-right border-collapse">
-                <thead>
-                  <tr className="bg-slate-950/70 border-b border-slate-800 text-slate-400 font-semibold">
-                    <th className="py-3.5 px-3">رقم القيد (الكود)</th>
-                    <th className="py-3.5 px-3">الصورة والاسم الكامل</th>
-                    <th className="py-3.5 px-3">الهاتف والواتساب</th>
-                    <th className="py-3.5 px-3">الفرقة والشعبة</th>
-                    <th className="py-3.5 px-3">حالة الاعتماد والنوع</th>
-                    <th className="py-3.5 px-3">البريد الإلكتروني</th>
-                    <th className="py-3.5 px-3">تاريخ التسجيل</th>
-                    <th className="py-3.5 px-3 text-center">الإجراءات والاعتماد</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-800/60">
-                  {filteredStudents.map((s) => {
-                    const yearObj = ACADEMIC_YEARS.find((y) => y.id === s.academic_year);
-                    const isCopied = copiedId === s.id;
-                    const cleanPhone = s.phone?.replace(/\D/g, '');
-                    const formattedPhone = cleanPhone?.startsWith('0') ? `2${cleanPhone}` : cleanPhone;
-                    const isPending = !s.is_guest && s.is_approved === false;
-                    const isRowRevealed = revealedRows.has(s.id);
-                    const displayPhone = isRowRevealed ? s.phone : maskPhoneNumber(s.phone);
-                    const displayEmail = isRowRevealed ? s.email : maskEmail(s.email);
-                    const isPhotoRevealed = revealedPhotos.has(s.id);
+            <>
+              {/* Desktop Table View (Hidden on mobile) */}
+              <div className="hidden md:block overflow-x-auto">
+                <table className="w-full text-xs text-right border-collapse">
+                  <thead>
+                    <tr className="bg-slate-950/70 border-b border-slate-800 text-slate-400 font-semibold">
+                      <th className="py-3.5 px-3 text-center w-10">
+                        <input
+                          type="checkbox"
+                          checked={filteredStudents.length > 0 && selectedStudentIds.length === filteredStudents.length}
+                          onChange={handleSelectAllFiltered}
+                          className="w-4 h-4 rounded border-slate-700 bg-slate-900 text-amber-500 focus:ring-0 cursor-pointer"
+                          title="تحديد الكل"
+                        />
+                      </th>
+                      <th className="py-3.5 px-3">رقم القيد (الكود)</th>
+                      <th className="py-3.5 px-3">الصورة والاسم الكامل</th>
+                      <th className="py-3.5 px-3">الهاتف والواتساب</th>
+                      <th className="py-3.5 px-3">الفرقة والشعبة</th>
+                      <th className="py-3.5 px-3">حالة الاعتماد والنوع</th>
+                      <th className="py-3.5 px-3">البريد الإلكتروني</th>
+                      <th className="py-3.5 px-3">تاريخ التسجيل</th>
+                      <th className="py-3.5 px-3 text-center">الإجراءات والاعتماد</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/60">
+                    {filteredStudents.map((s) => {
+                      const yearObj = ACADEMIC_YEARS.find((y) => y.id === s.academic_year);
+                      const isCopied = copiedId === s.id;
+                      const cleanPhone = s.phone?.replace(/\D/g, '');
+                      const formattedPhone = cleanPhone?.startsWith('0') ? `2${cleanPhone}` : cleanPhone;
+                      const isPending = !s.is_guest && s.is_approved === false;
+                      const isRowRevealed = revealedRows.has(s.id);
+                      const displayPhone = isRowRevealed ? s.phone : maskPhoneNumber(s.phone);
+                      const displayEmail = isRowRevealed ? s.email : maskEmail(s.email);
+                      const isPhotoRevealed = revealedPhotos.has(s.id);
+                      const isSelected = selectedStudentIds.includes(s.id);
 
-                    return (
-                      <tr
-                        key={s.id}
-                        className={`transition-colors text-slate-200 ${
-                          s.is_banned
-                            ? 'bg-rose-950/20 hover:bg-rose-950/30 border-r-4 border-rose-500'
-                            : isPending
-                            ? 'bg-amber-500/5 hover:bg-amber-500/10'
-                            : 'hover:bg-slate-800/40'
-                        }`}
-                      >
-                        {/* Code + Edit ID Button */}
-                        <td className="py-3 px-3 font-mono font-bold text-amber-400 whitespace-nowrap">
-                          <div className="flex items-center gap-1.5">
-                            <span>{s.student_code}</span>
-                            <button
-                              onClick={() => handleCopy(s.student_code, s.id)}
-                              className="p-1 rounded text-slate-500 hover:text-amber-400 hover:bg-slate-800 transition-colors"
-                              title="نسخ رقم القيد"
-                            >
-                              {isCopied ? (
-                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                              ) : (
-                                <Copy className="w-3.5 h-3.5" />
-                              )}
-                            </button>
-                            {/* Edit VIP Code */}
-                            {canManageStudents && (
+                      return (
+                        <tr
+                          key={s.id}
+                          className={`transition-colors text-slate-200 ${
+                            s.is_banned
+                              ? 'bg-rose-950/20 hover:bg-rose-950/30 border-r-4 border-rose-500'
+                              : isPending
+                              ? 'bg-amber-500/5 hover:bg-amber-500/10'
+                              : isSelected
+                              ? 'bg-amber-500/10 hover:bg-amber-500/15'
+                              : 'hover:bg-slate-800/40'
+                          }`}
+                        >
+                          {/* Selection Checkbox */}
+                          <td className="py-3 px-3 text-center">
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => toggleSelectStudent(s.id)}
+                              className="w-4 h-4 rounded border-slate-700 bg-slate-900 text-amber-500 focus:ring-0 cursor-pointer"
+                            />
+                          </td>
+
+                          {/* Code + Edit ID Button */}
+                          <td className="py-3 px-3 font-mono font-bold text-amber-400 whitespace-nowrap">
+                            <div className="flex items-center gap-1.5">
+                              <span>{s.student_code}</span>
                               <button
-                                onClick={() => {
-                                  setEditCodeStudent(s);
-                                  setCustomStudentCode(s.student_code);
-                                  setCodeError('');
-                                  setCodeSuccess(false);
-                                }}
+                                onClick={() => handleCopy(s.student_code, s.id)}
                                 className="p-1 rounded text-slate-500 hover:text-amber-400 hover:bg-slate-800 transition-colors"
-                                title="تعديل الكود لرقم VIP مميز"
+                                title="نسخ رقم القيد"
                               >
-                                <Edit3 className="w-3.5 h-3.5" />
+                                {isCopied ? (
+                                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                                ) : (
+                                  <Copy className="w-3.5 h-3.5" />
+                                )}
                               </button>
-                            )}
-                          </div>
-                        </td>
-
-                        {/* Photo & Name */}
-                        <td className="py-3 px-3 whitespace-nowrap">
-                          <div className="flex items-center gap-2.5">
-                            <div className="relative w-9 h-9 rounded-full bg-slate-800 border border-amber-500/30 overflow-hidden shrink-0 flex items-center justify-center group/avatar shadow-inner">
-                              {s.avatar_url ? (
-                                <>
-                                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                                  <img
-                                    src={s.avatar_url}
-                                    alt={s.full_name}
-                                    className={`w-full h-full object-cover transition-all duration-300 ${
-                                      isPhotoRevealed ? 'filter-none scale-100' : 'filter blur-xl scale-125'
-                                    }`}
-                                  />
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      togglePhotoReveal(s.id);
-                                    }}
-                                    className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover/avatar:opacity-100 hover:!opacity-100 transition-opacity text-white"
-                                    title={isPhotoRevealed ? 'إعادة تعتيم الصورة' : 'كشف الصورة مؤقتاً'}
-                                  >
-                                    {isPhotoRevealed ? (
-                                      <EyeOff className="w-3.5 h-3.5" />
-                                    ) : (
-                                      <Eye className="w-3.5 h-3.5" />
-                                    )}
-                                  </button>
-                                </>
-                              ) : (
-                                <span className="text-xs">{s.gender === 'female' ? '👩‍🎓' : '👨‍🎓'}</span>
+                              {/* Edit VIP Code */}
+                              {canManageStudents && (
+                                <button
+                                  onClick={() => {
+                                    setEditCodeStudent(s);
+                                    setCustomStudentCode(s.student_code);
+                                    setCodeError('');
+                                    setCodeSuccess(false);
+                                  }}
+                                  className="p-1 rounded text-slate-500 hover:text-amber-400 hover:bg-slate-800 transition-colors"
+                                  title="تعديل الكود لرقم VIP مميز"
+                                >
+                                  <Edit3 className="w-3.5 h-3.5" />
+                                </button>
                               )}
                             </div>
-                            <div className="flex flex-col gap-0.5">
-                              <div className="flex items-center gap-1.5 flex-wrap">
-                                <span className="font-bold text-white block">{s.full_name}</span>
-                                {s.is_verified && (
-                                  <span
-                                    className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold text-[#EC4899] bg-pink-500/15 border border-pink-500/30"
-                                    title="طالب موثق ومعتمد رسمياً VIP"
-                                  >
-                                    <BadgeCheck className="w-3 h-3 text-[#EC4899]" />
-                                    <span>معتمد ✓</span>
-                                  </span>
-                                )}
-                                {s.is_banned && (
-                                  <span
-                                    className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold text-rose-400 bg-rose-500/15 border border-rose-500/30"
-                                    title="حساب محظور"
-                                  >
-                                    <Ban className="w-3 h-3 text-rose-400" />
-                                    <span>محظور 🚫</span>
-                                  </span>
-                                )}
-                                {typeof s.activity_score === 'number' && s.activity_score > 0 && (
-                                  <span
-                                    className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold text-amber-300 bg-amber-500/15 border border-amber-500/30"
-                                    title={`نقاط تفاعل الطالب: ${s.activity_score}`}
-                                  >
-                                    <Flame className="w-3 h-3 text-amber-400" />
-                                    <span>{s.activity_score}</span>
-                                  </span>
+                          </td>
+
+                          {/* Photo & Name */}
+                          <td className="py-3 px-3 whitespace-nowrap">
+                            <div className="flex items-center gap-2.5">
+                              <div className="relative w-9 h-9 rounded-full bg-slate-800 border border-amber-500/30 overflow-hidden shrink-0 flex items-center justify-center group/avatar shadow-inner">
+                                {s.avatar_url ? (
+                                  <>
+                                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                                    <img
+                                      src={s.avatar_url}
+                                      alt={s.full_name}
+                                      className={`w-full h-full object-cover transition-all duration-300 ${
+                                        isPhotoRevealed ? 'filter-none scale-100' : 'filter blur-xl scale-125'
+                                      }`}
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        togglePhotoReveal(s.id);
+                                      }}
+                                      className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover/avatar:opacity-100 hover:!opacity-100 transition-opacity text-white"
+                                      title={isPhotoRevealed ? 'إعادة تعتيم الصورة' : 'كشف الصورة مؤقتاً'}
+                                    >
+                                      {isPhotoRevealed ? (
+                                        <EyeOff className="w-3.5 h-3.5" />
+                                      ) : (
+                                        <Eye className="w-3.5 h-3.5" />
+                                      )}
+                                    </button>
+                                  </>
+                                ) : (
+                                  <span className="text-xs">{s.gender === 'female' ? '👩‍🎓' : '👨‍🎓'}</span>
                                 )}
                               </div>
+                              <div className="flex flex-col gap-0.5">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="font-bold text-white block">{s.full_name}</span>
+                                  {s.is_verified && (
+                                    <span
+                                      className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold text-[#EC4899] bg-pink-500/15 border border-pink-500/30"
+                                      title="طالب موثق ومعتمد رسمياً VIP"
+                                    >
+                                      <BadgeCheck className="w-3 h-3 text-[#EC4899]" />
+                                      <span>معتمد ✓</span>
+                                    </span>
+                                  )}
+                                  {s.is_banned && (
+                                    <span
+                                      className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold text-rose-400 bg-rose-500/15 border border-rose-500/30"
+                                      title="حساب محظور"
+                                    >
+                                      <Ban className="w-3 h-3 text-rose-400" />
+                                      <span>محظور 🚫</span>
+                                    </span>
+                                  )}
+                                  {typeof s.activity_score === 'number' && s.activity_score > 0 && (
+                                    <span
+                                      className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold text-amber-300 bg-amber-500/15 border border-amber-500/30"
+                                      title={`نقاط تفاعل الطالب: ${s.activity_score}`}
+                                    >
+                                      <Flame className="w-3 h-3 text-amber-400" />
+                                      <span>{s.activity_score}</span>
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
                             </div>
-                          </div>
-                        </td>
+                          </td>
 
-                        {/* Phone + WhatsApp + Eye Toggle */}
-                        <td className="py-3 px-3 whitespace-nowrap">
-                          {s.phone ? (
-                            <div className="flex items-center gap-1.5 font-mono">
-                              <span className="text-slate-300" dir="ltr">{displayPhone}</span>
+                          {/* Phone + WhatsApp + Eye Toggle */}
+                          <td className="py-3 px-3 whitespace-nowrap">
+                            {s.phone ? (
+                              <div className="flex items-center gap-1.5 font-mono">
+                                <span className="text-slate-300" dir="ltr">{displayPhone}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => toggleRowReveal(s.id)}
+                                  className="p-1 rounded text-slate-400 hover:text-amber-400 hover:bg-slate-800 transition-colors"
+                                  title={isRowRevealed ? 'حجب البيانات الحساسة' : 'إظهار الهاتف والإيميل كاملاً'}
+                                >
+                                  {isRowRevealed ? (
+                                    <EyeOff className="w-3.5 h-3.5" />
+                                  ) : (
+                                    <Eye className="w-3.5 h-3.5" />
+                                  )}
+                                </button>
+                                <a
+                                  href={`https://wa.me/${formattedPhone}?text=${encodeURIComponent(
+                                    `مرحباً يا ${s.full_name}، نتواصل معك من إدارة منصة الدستور التعليمية`
+                                  )}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="p-1 rounded bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600 hover:text-white transition-colors"
+                                  title="مراسلة عبر واتساب"
+                                >
+                                  <MessageCircle className="w-3.5 h-3.5 fill-current" />
+                                </a>
+                              </div>
+                            ) : (
+                              <span className="text-slate-500 text-[11px]">غير متوفر</span>
+                            )}
+                          </td>
+
+                          {/* Year & Study Type */}
+                          <td className="py-3 px-3 whitespace-nowrap">
+                            <div className="flex flex-col gap-0.5">
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-800 border border-slate-700 text-amber-300 font-medium">
+                                <GraduationCap className="w-3 h-3" />
+                                <span>{yearObj?.name || `الفرقة ${s.academic_year}`}</span>
+                              </span>
+                              <span className="text-[10px] text-slate-400">
+                                الشعبة: <strong className="text-slate-200">{s.study_type || 'انتظام'}</strong>
+                              </span>
+                            </div>
+                          </td>
+
+                          {/* Approval Status & Gender */}
+                          <td className="py-3 px-3 whitespace-nowrap">
+                            <div className="flex flex-col gap-1">
+                              {s.is_guest ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 text-[10px] font-bold">
+                                  زائر (Guest)
+                                </span>
+                              ) : isPending ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-bold animate-pulse">
+                                  <Clock className="w-3 h-3" />
+                                  <span>معلق (بانتظار الاعتماد)</span>
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold">
+                                  <ShieldCheck className="w-3 h-3" />
+                                  <span>معتمد رسمياً ✅</span>
+                                </span>
+                              )}
+
+                              <span className="text-[10px] text-slate-400">
+                                {s.gender === 'female' ? 'طالبة 🟣' : 'طالب 🔵'}
+                              </span>
+                            </div>
+                          </td>
+
+                          {/* Email */}
+                          <td className="py-3 px-3 font-mono text-slate-400 whitespace-nowrap">
+                            {s.email ? (
+                              <a
+                                href={`mailto:${s.email}`}
+                                className="hover:text-amber-400 hover:underline flex items-center gap-1"
+                              >
+                                <Mail className="w-3 h-3 text-slate-500" />
+                                <span>{displayEmail}</span>
+                              </a>
+                            ) : (
+                              <span className="text-slate-500">زائر بدون إيميل</span>
+                            )}
+                          </td>
+
+                          {/* Date */}
+                          <td className="py-3 px-3 text-slate-400 whitespace-nowrap font-mono text-[11px]">
+                            <div className="flex items-center gap-1">
+                              <Calendar className="w-3 h-3 text-slate-500" />
+                              <span>
+                                {new Date(s.created_at).toLocaleDateString('ar-EG', {
+                                  year: 'numeric',
+                                  month: 'short',
+                                  day: 'numeric',
+                                })}
+                              </span>
+                            </div>
+                          </td>
+
+                          {/* Actions */}
+                          <td className="py-3 px-3 whitespace-nowrap">
+                            <div className="flex items-center justify-center gap-1.5">
+                              {/* Approve Button (Only for Pending) */}
+                              {isPending && canManageStudents && (
+                                <button
+                                  onClick={() => handleApproveStudent(s.id, s.full_name)}
+                                  disabled={approvingId === s.id}
+                                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-md transition-all active:scale-95 disabled:opacity-50"
+                                  title="اعتماد وتفعيل حساب الطالب"
+                                >
+                                  {approvingId === s.id ? (
+                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                  ) : (
+                                    <Check className="w-3.5 h-3.5" />
+                                  )}
+                                  <span>اعتماد ✅</span>
+                                </button>
+                              )}
+
+                              {/* Verify VIP Toggle */}
+                              {canManageStudents && !s.is_guest && (
+                                <button
+                                  onClick={() => handleToggleVerify(s.id, s.is_verified)}
+                                  className={`p-1.5 rounded-lg border transition-colors ${
+                                    s.is_verified
+                                      ? 'bg-pink-500/20 text-[#EC4899] border-pink-500/40 shadow-sm'
+                                      : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-[#EC4899]'
+                                  }`}
+                                  title={s.is_verified ? 'إلغاء شارة الاعتماد والتوثيق' : 'منح الاعتماد والتوثيق VIP'}
+                                >
+                                  <BadgeCheck className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+
+                              {/* Unbind Device */}
+                              {canManageStudents && !s.is_guest && (
+                                <button
+                                  onClick={() => handleUnbindDevice(s.id, s.full_name)}
+                                  className="p-1.5 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-400 border border-cyan-500/30 transition-colors"
+                                  title="فك ارتباط الجهاز 🔄 (السماح بالدخول من جهاز جديد)"
+                                >
+                                  <Smartphone className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+
+                              {/* Ban / Unban Toggle */}
+                              {canManageStudents && !s.is_guest && (
+                                <button
+                                  onClick={() => handleToggleBan(s.id, s.is_banned)}
+                                  className={`p-1.5 rounded-lg border transition-colors ${
+                                    s.is_banned
+                                      ? 'bg-rose-500/20 text-rose-400 border-rose-500/50'
+                                      : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-rose-400'
+                                  }`}
+                                  title={s.is_banned ? 'فك الحظر عن هذا الطالب' : 'حظر نهائي 🚫'}
+                                >
+                                  <Ban className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+
+                              {/* Edit VIP ID Button */}
+                              {canManageStudents && (
+                                <button
+                                  onClick={() => {
+                                    setEditCodeStudent(s);
+                                    setCustomStudentCode(s.student_code);
+                                    setCodeError('');
+                                    setCodeSuccess(false);
+                                  }}
+                                  className="p-1.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-400 border border-amber-500/30 transition-colors"
+                                  title="تعديل الكود / تعيين رقم VIP"
+                                >
+                                  <Crown className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+
+                              {/* Reset Password */}
+                              {!s.is_guest && canManageStudents && (
+                                <button
+                                  onClick={() => {
+                                    setResetModalStudent(s);
+                                    setNewPassword('');
+                                    setResetError('');
+                                    setResetSuccess(false);
+                                  }}
+                                  className="p-1.5 rounded-lg bg-blue-500/15 hover:bg-blue-500/25 text-blue-400 border border-blue-500/30 transition-colors"
+                                  title="إعادة تعيين كلمة المرور"
+                                >
+                                  <KeyRound className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+
+                              {/* Delete */}
+                              {canManageStudents && (
+                                <button
+                                  onClick={() => handleDeleteStudent(s.id, s.full_name)}
+                                  disabled={deletingId === s.id}
+                                  className="p-1.5 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 border border-rose-500/30 transition-colors disabled:opacity-50"
+                                  title="حذف أو رفض الحساب"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Mobile Card-Stack View (Shown on screens < 768px) */}
+              <div className="block md:hidden space-y-3 p-3">
+                {filteredStudents.map((s) => {
+                  const yearObj = ACADEMIC_YEARS.find((y) => y.id === s.academic_year);
+                  const isCopied = copiedId === s.id;
+                  const cleanPhone = s.phone?.replace(/\D/g, '');
+                  const formattedPhone = cleanPhone?.startsWith('0') ? `2${cleanPhone}` : cleanPhone;
+                  const isPending = !s.is_guest && s.is_approved === false;
+                  const isRowRevealed = revealedRows.has(s.id);
+                  const displayPhone = isRowRevealed ? s.phone : maskPhoneNumber(s.phone);
+                  const displayEmail = isRowRevealed ? s.email : maskEmail(s.email);
+                  const isSelected = selectedStudentIds.includes(s.id);
+
+                  return (
+                    <div
+                      key={s.id}
+                      className={`p-4 rounded-2xl border text-right transition-all ${
+                        s.is_banned
+                          ? 'bg-rose-950/20 border-rose-500/40'
+                          : isPending
+                          ? 'bg-amber-500/5 border-amber-500/30'
+                          : isSelected
+                          ? 'bg-amber-500/10 border-amber-500/40'
+                          : 'bg-slate-950/80 border-slate-800'
+                      }`}
+                    >
+                      {/* Top Bar: Checkbox + Code + Badges */}
+                      <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-slate-800/80">
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleSelectStudent(s.id)}
+                            className="w-4 h-4 rounded border-slate-700 bg-slate-900 text-amber-500 focus:ring-0 cursor-pointer"
+                          />
+                          <span className="font-mono font-bold text-amber-400 text-xs">{s.student_code}</span>
+                          <button
+                            type="button"
+                            onClick={() => handleCopy(s.student_code, s.id)}
+                            className="p-1 text-slate-500 hover:text-amber-400"
+                          >
+                            {isCopied ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                          </button>
+                        </div>
+
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {s.is_guest ? (
+                            <span className="px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 text-[10px] font-bold">
+                              زائر
+                            </span>
+                          ) : isPending ? (
+                            <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 text-[10px] font-bold animate-pulse">
+                              معلق ⏳
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 text-[10px] font-bold">
+                              معتمد ✅
+                            </span>
+                          )}
+                          {s.is_verified && (
+                            <span className="px-1.5 py-0.5 rounded-full bg-pink-500/15 text-[#EC4899] text-[10px] font-bold">
+                              VIP
+                            </span>
+                          )}
+                          {s.is_banned && (
+                            <span className="px-1.5 py-0.5 rounded-full bg-rose-500/15 text-rose-400 text-[10px] font-bold">
+                              محظور 🚫
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Student Info */}
+                      <div className="py-2.5 space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <h4 className="font-bold text-white text-sm">{s.full_name}</h4>
+                          <span className="text-[11px] text-slate-400">
+                            {yearObj?.name || `الفرقة ${s.academic_year}`} • {s.study_type || 'انتظام'}
+                          </span>
+                        </div>
+
+                        {s.phone && (
+                          <div className="flex items-center justify-between text-xs font-mono text-slate-300 pt-1">
+                            <div className="flex items-center gap-1.5">
+                              <span dir="ltr">{displayPhone}</span>
                               <button
                                 type="button"
                                 onClick={() => toggleRowReveal(s.id)}
-                                className="p-1 rounded text-slate-400 hover:text-amber-400 hover:bg-slate-800 transition-colors"
-                                title={isRowRevealed ? 'حجب البيانات الحساسة' : 'إظهار الهاتف والإيميل كاملاً'}
+                                className="p-1 text-slate-400 hover:text-white"
                               >
-                                {isRowRevealed ? (
-                                  <EyeOff className="w-3.5 h-3.5" />
-                                ) : (
-                                  <Eye className="w-3.5 h-3.5" />
-                                )}
+                                {isRowRevealed ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
                               </button>
-                              <a
-                                href={`https://wa.me/${formattedPhone}?text=${encodeURIComponent(
-                                  `مرحباً يا ${s.full_name}، نتواصل معك من إدارة منصة الدستور التعليمية`
-                                )}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="p-1 rounded bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600 hover:text-white transition-colors"
-                                title="مراسلة عبر واتساب"
-                              >
-                                <MessageCircle className="w-3.5 h-3.5 fill-current" />
-                              </a>
                             </div>
-                          ) : (
-                            <span className="text-slate-500 text-[11px]">غير متوفر</span>
-                          )}
-                        </td>
-
-                        {/* Year & Study Type */}
-                        <td className="py-3 px-3 whitespace-nowrap">
-                          <div className="flex flex-col gap-0.5">
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-800 border border-slate-700 text-amber-300 font-medium">
-                              <GraduationCap className="w-3 h-3" />
-                              <span>{yearObj?.name || `الفرقة ${s.academic_year}`}</span>
-                            </span>
-                            <span className="text-[10px] text-slate-400">
-                              الشعبة: <strong className="text-slate-200">{s.study_type || 'انتظام'}</strong>
-                            </span>
-                          </div>
-                        </td>
-
-                        {/* Approval Status & Gender */}
-                        <td className="py-3 px-3 whitespace-nowrap">
-                          <div className="flex flex-col gap-1">
-                            {s.is_guest ? (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 text-[10px] font-bold">
-                                زائر (Guest)
-                              </span>
-                            ) : isPending ? (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-bold animate-pulse">
-                                <Clock className="w-3 h-3" />
-                                <span>معلق (بانتظار الاعتماد)</span>
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold">
-                                <ShieldCheck className="w-3 h-3" />
-                                <span>معتمد رسمياً ✅</span>
-                              </span>
-                            )}
-
-                            <span className="text-[10px] text-slate-400">
-                              {s.gender === 'female' ? 'طالبة 🟣' : 'طالب 🔵'}
-                            </span>
-                          </div>
-                        </td>
-
-                        {/* Email */}
-                        <td className="py-3 px-3 font-mono text-slate-400 whitespace-nowrap">
-                          {s.email ? (
                             <a
-                              href={`mailto:${s.email}`}
-                              className="hover:text-amber-400 hover:underline flex items-center gap-1"
+                              href={`https://wa.me/${formattedPhone}?text=${encodeURIComponent(
+                                `مرحباً يا ${s.full_name}، نتواصل معك من إدارة منصة الدستور التعليمية`
+                              )}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="px-2.5 py-1 rounded-lg bg-emerald-600/20 text-emerald-400 text-[11px] font-bold flex items-center gap-1"
                             >
-                              <Mail className="w-3 h-3 text-slate-500" />
-                              <span>{displayEmail}</span>
+                              <MessageCircle className="w-3 h-3" />
+                              <span>واتساب</span>
                             </a>
-                          ) : (
-                            <span className="text-slate-500">زائر بدون إيميل</span>
-                          )}
-                        </td>
-
-                        {/* Date */}
-                        <td className="py-3 px-3 text-slate-400 whitespace-nowrap font-mono text-[11px]">
-                          <div className="flex items-center gap-1">
-                            <Calendar className="w-3 h-3 text-slate-500" />
-                            <span>
-                              {new Date(s.created_at).toLocaleDateString('ar-EG', {
-                                year: 'numeric',
-                                month: 'short',
-                                day: 'numeric',
-                              })}
-                            </span>
                           </div>
-                        </td>
+                        )}
 
-                        {/* Actions */}
-                        <td className="py-3 px-3 whitespace-nowrap">
-                          <div className="flex items-center justify-center gap-1.5">
-                            {/* Approve Button (Only for Pending) */}
-                            {isPending && canManageStudents && (
+                        {s.email && (
+                          <div className="text-[11px] font-mono text-slate-400 flex items-center gap-1 pt-0.5">
+                            <Mail className="w-3 h-3 text-slate-500" />
+                            <span>{displayEmail}</span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Action Buttons Row */}
+                      {canManageStudents && (
+                        <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between gap-1.5 flex-wrap">
+                          <div className="flex items-center gap-1.5">
+                            {isPending && (
                               <button
+                                type="button"
                                 onClick={() => handleApproveStudent(s.id, s.full_name)}
                                 disabled={approvingId === s.id}
-                                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-md transition-all active:scale-95 disabled:opacity-50"
-                                title="اعتماد وتفعيل حساب الطالب"
+                                className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs min-h-[44px] flex items-center gap-1"
                               >
-                                {approvingId === s.id ? (
-                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                ) : (
-                                  <Check className="w-3.5 h-3.5" />
-                                )}
-                                <span>اعتماد ✅</span>
+                                {approvingId === s.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                                <span>اعتماد</span>
                               </button>
                             )}
 
-                            {/* Verify VIP Toggle */}
-                            {canManageStudents && !s.is_guest && (
+                            {!s.is_guest && (
                               <button
+                                type="button"
                                 onClick={() => handleToggleVerify(s.id, s.is_verified)}
-                                className={`p-1.5 rounded-lg border transition-colors ${
-                                  s.is_verified
-                                    ? 'bg-pink-500/20 text-[#EC4899] border-pink-500/40 shadow-sm'
-                                    : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-[#EC4899]'
-                                }`}
-                                title={s.is_verified ? 'إلغاء شارة الاعتماد والتوثيق' : 'منح الاعتماد والتوثيق VIP'}
+                                className="p-2 rounded-lg bg-slate-800 text-pink-400 border border-slate-700 min-h-[44px] min-w-[44px] flex items-center justify-center"
+                                title="توثيق VIP"
                               >
-                                <BadgeCheck className="w-3.5 h-3.5" />
+                                <BadgeCheck className="w-4 h-4" />
                               </button>
                             )}
 
-                            {/* Unbind Device */}
-                            {canManageStudents && !s.is_guest && (
+                            {!s.is_guest && (
                               <button
+                                type="button"
                                 onClick={() => handleUnbindDevice(s.id, s.full_name)}
-                                className="p-1.5 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-400 border border-cyan-500/30 transition-colors"
-                                title="فك ارتباط الجهاز 🔄 (السماح بالدخول من جهاز جديد)"
+                                className="p-2 rounded-lg bg-cyan-500/15 text-cyan-400 border border-cyan-500/30 min-h-[44px] min-w-[44px] flex items-center justify-center"
+                                title="فك الجهاز"
                               >
-                                <Smartphone className="w-3.5 h-3.5" />
+                                <Smartphone className="w-4 h-4" />
                               </button>
                             )}
 
-                            {/* Ban / Unban Toggle */}
-                            {canManageStudents && !s.is_guest && (
+                            {!s.is_guest && (
                               <button
-                                onClick={() => handleToggleBan(s.id, s.is_banned)}
-                                className={`p-1.5 rounded-lg border transition-colors ${
-                                  s.is_banned
-                                    ? 'bg-rose-500/20 text-rose-400 border-rose-500/50'
-                                    : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-rose-400'
-                                }`}
-                                title={s.is_banned ? 'فك الحظر عن هذا الطالب' : 'حظر نهائي 🚫'}
-                              >
-                                <Ban className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-
-                            {/* Edit VIP ID Button */}
-                            {canManageStudents && (
-                              <button
-                                onClick={() => {
-                                  setEditCodeStudent(s);
-                                  setCustomStudentCode(s.student_code);
-                                  setCodeError('');
-                                  setCodeSuccess(false);
-                                }}
-                                className="p-1.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-400 border border-amber-500/30 transition-colors"
-                                title="تعديل الكود / تعيين رقم VIP"
-                              >
-                                <Crown className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-
-                            {/* Reset Password */}
-                            {!s.is_guest && canManageStudents && (
-                              <button
+                                type="button"
                                 onClick={() => {
                                   setResetModalStudent(s);
                                   setNewPassword('');
                                   setResetError('');
                                   setResetSuccess(false);
                                 }}
-                                className="p-1.5 rounded-lg bg-blue-500/15 hover:bg-blue-500/25 text-blue-400 border border-blue-500/30 transition-colors"
-                                title="إعادة تعيين كلمة المرور"
+                                className="p-2 rounded-lg bg-blue-500/15 text-blue-400 border border-blue-500/30 min-h-[44px] min-w-[44px] flex items-center justify-center"
+                                title="تغيير كلمة المرور"
                               >
-                                <KeyRound className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-
-                            {/* Delete */}
-                            {canManageStudents && (
-                              <button
-                                onClick={() => handleDeleteStudent(s.id, s.full_name)}
-                                disabled={deletingId === s.id}
-                                className="p-1.5 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 border border-rose-500/30 transition-colors disabled:opacity-50"
-                                title="حذف أو رفض الحساب"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
+                                <KeyRound className="w-4 h-4" />
                               </button>
                             )}
                           </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+
+                          <div className="flex items-center gap-1.5">
+                            {!s.is_guest && (
+                              <button
+                                type="button"
+                                onClick={() => handleToggleBan(s.id, s.is_banned)}
+                                className={`p-2 rounded-lg border min-h-[44px] min-w-[44px] flex items-center justify-center ${
+                                  s.is_banned ? 'bg-rose-500/20 text-rose-400 border-rose-500/50' : 'bg-slate-800 text-slate-400 border-slate-700'
+                                }`}
+                                title={s.is_banned ? 'فك الحظر' : 'حظر'}
+                              >
+                                <Ban className="w-4 h-4" />
+                              </button>
+                            )}
+
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteStudent(s.id, s.full_name)}
+                              disabled={deletingId === s.id}
+                              className="p-2 rounded-lg bg-rose-500/15 text-rose-400 border border-rose-500/30 min-h-[44px] min-w-[44px] flex items-center justify-center"
+                              title="حذف"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </>
           )}
         </div>
       )}
@@ -1433,68 +1698,39 @@ export function StudentsDirectory({ adminSession }: StudentsDirectoryProps) {
                 <Shield className="w-6 h-6" />
               </div>
               <div>
-                <h3 className="text-lg font-black text-white">إنشاء وتفعيل حماية الخزنة المشفرة (Double-Password Vault)</h3>
-                <p className="text-xs text-purple-300/80">نظام حماية مزدوج مستقل عن كلمة مرور لوحة التحكم</p>
+                <h3 className="text-lg font-black text-white">إعداد كلمة مرور خزنة بيانات الطلاب المشفرة</h3>
+                <p className="text-xs text-purple-300/80">كلمة مرور موحدة لحماية الخزنة وسجلات الهواتف (الافتراضية: AlDostour@2006)</p>
               </div>
             </div>
 
             <p className="text-xs text-slate-400 leading-relaxed">
-              لحماية هواتف وبيانات الطلاب من الوصول غير المصرح به، يجب إعداد كلمتي مرور مختلفتين: الأولى رقمية فقط (4-12 رقماً)، والثانية تحتوي على حروف ورموز خاصة (!@#$).
+              لحماية هواتف وبيانات الطلاب من الوصول غير المصرح به، يمكنك تخصيص كلمة مرور قوية للخزنة.
             </p>
 
             <form onSubmit={handleSaveVaultSetup} className="space-y-4">
-              {/* Numeric Password */}
               <div className="p-3.5 rounded-2xl bg-slate-950 border border-slate-800 space-y-3">
                 <h4 className="text-xs font-bold text-amber-400 flex items-center gap-1.5">
                   <Lock className="w-3.5 h-3.5" />
-                  <span>1. كلمة مرور الأرقام السرية (Strictly Digits):</span>
+                  <span>كلمة مرور الخزنة المشفرة:</span>
                 </h4>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <input
                     type="password"
-                    value={setupNumericPassword}
-                    onChange={(e) => setSetupNumericPassword(e.target.value)}
-                    placeholder="كلمة المرور (4-12 رقماً)"
+                    value={setupSinglePassword}
+                    onChange={(e) => setSetupSinglePassword(e.target.value)}
+                    placeholder="كلمة المرور الجديدة"
                     required
                     dir="ltr"
                     className="h-10 px-3 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
                   />
                   <input
                     type="password"
-                    value={setupConfirmNumeric}
-                    onChange={(e) => setSetupConfirmNumeric(e.target.value)}
-                    placeholder="تأكيد كلمة مرور الأرقام"
+                    value={setupConfirmPassword}
+                    onChange={(e) => setSetupConfirmPassword(e.target.value)}
+                    placeholder="تأكيد كلمة المرور"
                     required
                     dir="ltr"
                     className="h-10 px-3 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
-                  />
-                </div>
-              </div>
-
-              {/* Complex Password */}
-              <div className="p-3.5 rounded-2xl bg-slate-950 border border-slate-800 space-y-3">
-                <h4 className="text-xs font-bold text-sky-400 flex items-center gap-1.5">
-                  <Lock className="w-3.5 h-3.5" />
-                  <span>2. كلمة مرور الحروف والرموز (Letters + Special Symbols):</span>
-                </h4>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <input
-                    type="password"
-                    value={setupComplexPassword}
-                    onChange={(e) => setSetupComplexPassword(e.target.value)}
-                    placeholder="كلمة مرور معقدة (6 خانات+)"
-                    required
-                    dir="ltr"
-                    className="h-10 px-3 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-sky-500"
-                  />
-                  <input
-                    type="password"
-                    value={setupConfirmComplex}
-                    onChange={(e) => setSetupConfirmComplex(e.target.value)}
-                    placeholder="تأكيد كلمة المرور المعقدة"
-                    required
-                    dir="ltr"
-                    className="h-10 px-3 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-sky-500"
                   />
                 </div>
               </div>
@@ -1509,7 +1745,7 @@ export function StudentsDirectory({ adminSession }: StudentsDirectoryProps) {
               {setupSuccess && (
                 <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
-                  <span>تم حفظ وتفعيل نظام الحماية المزدوجة للخزنة بنجاح!</span>
+                  <span>تم حفظ وتفعيل حماية الخزنة بنجاح!</span>
                 </div>
               )}
 

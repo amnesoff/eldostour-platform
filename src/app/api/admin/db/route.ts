@@ -130,67 +130,6 @@ export async function authenticateAdmin(req: NextRequest): Promise<AdminSession 
         };
       }
     }
-
-    // B) Try parsing as JSON object (e.g. current admin login session string)
-    try {
-      let parsed: any = null;
-      if (decodedStr.startsWith('{') && decodedStr.endsWith('}')) {
-        parsed = JSON.parse(decodedStr);
-      } else if (raw.startsWith('{') && raw.endsWith('}')) {
-        parsed = JSON.parse(raw);
-      }
-
-      if (parsed && typeof parsed === 'object' && parsed.username) {
-        const u = String(parsed.username).trim();
-        const isSuper =
-          u.toLowerCase() === defaultSuperUsername.toLowerCase() || parsed.is_super_admin === true;
-
-        if (isSuper) {
-          if (
-            secRow?.session_version &&
-            parsed.session_version &&
-            secRow.session_version > parsed.session_version
-          ) {
-            continue;
-          }
-
-          return {
-            username: defaultSuperUsername,
-            is_super_admin: true,
-            session_version: secRow?.session_version || 1,
-            permissions: {
-              can_manage_students: true,
-              can_manage_content: true,
-              can_delete_content: true,
-              can_access_student_vault: true,
-            },
-          };
-        }
-
-        // Verify sub-admin against database
-        const { data: subAdmin } = await supabaseAdmin
-          .from('admin_users')
-          .select('*')
-          .ilike('username', u)
-          .maybeSingle();
-
-        if (subAdmin) {
-          return {
-            username: subAdmin.username,
-            is_super_admin: false,
-            session_version: 1,
-            permissions: {
-              can_manage_students: Boolean(subAdmin.can_manage_students),
-              can_manage_content: Boolean(subAdmin.can_manage_content),
-              can_delete_content: Boolean(subAdmin.can_delete_content),
-              can_access_student_vault: Boolean(subAdmin.can_access_student_vault),
-            },
-          };
-        }
-      }
-    } catch {
-      // not JSON format
-    }
   }
 
   return null;
@@ -449,6 +388,10 @@ export async function POST(req: NextRequest) {
         updated_at: new Date().toISOString(),
       };
 
+      const singlePass = body.vault_password || body.password || body.single_password;
+      if (singlePass) {
+        updates.vault_single_hash = hashSha256(String(singlePass).trim());
+      }
       if (body.numeric_password) {
         updates.vault_numeric_hash = hashSha256(body.numeric_password.trim());
       }
@@ -457,16 +400,18 @@ export async function POST(req: NextRequest) {
       }
 
       await supabaseAdmin.from('admin_security').update(updates).eq('id', 'primary');
-      await logAdminAudit(admin.username, 'update_vault', 'تم تحديث إعدادات وكلمات مرور الخزينة المشفرة', ip);
+      await logAdminAudit(admin.username, 'update_vault', 'تم تحديث إعدادات وكلمة مرور الخزينة المشفرة', ip);
 
       return NextResponse.json({ success: true });
     }
 
     if (action === 'unlock_vault') {
-      const { numericPassword, complexPassword } = body;
+      const { vaultPassword, password, numericPassword, complexPassword } = body;
+      const enteredPassword = (vaultPassword || password || '').trim();
+
       const { data: secRow } = await supabaseAdmin
         .from('admin_security')
-        .select('vault_enabled, vault_numeric_hash, vault_complex_hash')
+        .select('vault_enabled, vault_numeric_hash, vault_complex_hash, vault_single_hash')
         .eq('id', 'primary')
         .maybeSingle();
 
@@ -474,17 +419,38 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ success: true, unlocked: true });
       }
 
-      const numHash = hashSha256((numericPassword || '').trim());
-      const compHash = hashSha256((complexPassword || '').trim());
+      const defaultVaultPassword = 'AlDostour@2006';
+      const defaultVaultHash = hashSha256(defaultVaultPassword);
+      const enteredHash = enteredPassword ? hashSha256(enteredPassword) : '';
 
-      const isMatch = numHash === secRow.vault_numeric_hash && compHash === secRow.vault_complex_hash;
+      let isMatch = false;
+
+      // 1. Check single password match
+      if (enteredPassword) {
+        if (secRow.vault_single_hash) {
+          isMatch = enteredHash === secRow.vault_single_hash || enteredPassword === defaultVaultPassword;
+        } else {
+          // Default vault password when no custom single hash is stored
+          isMatch = enteredPassword === defaultVaultPassword || enteredHash === defaultVaultHash;
+        }
+      }
+
+      // 2. Fallback to dual passwords if provided
+      if (!isMatch && (numericPassword || complexPassword)) {
+        const numHash = hashSha256((numericPassword || '').trim());
+        const compHash = hashSha256((complexPassword || '').trim());
+        isMatch = numHash === secRow.vault_numeric_hash && compHash === secRow.vault_complex_hash;
+      }
 
       if (isMatch) {
-        await logAdminAudit(admin.username, 'unlock_vault', 'تم فك تشفير الخزينة بنجاح', ip);
+        await logAdminAudit(admin.username, 'unlock_vault', 'تم فك تشفير خزنة بيانات الطلاب بنجاح', ip);
         return NextResponse.json({ success: true, unlocked: true });
       } else {
-        await logAdminAudit(admin.username, 'failed_vault_unlock', 'محاولة فك تشفير فاشلة للخزينة', ip);
-        return NextResponse.json({ success: false, error: 'كلمات مرور الخزينة غير صحيحة' }, { status: 401 });
+        await logAdminAudit(admin.username, 'failed_vault_unlock', 'محاولة فك تشفير فاشلة لخزنة الطلاب', ip);
+        return NextResponse.json(
+          { success: false, error: 'كلمة مرور الخزنة غير صحيحة (الافتراضية: AlDostour@2006)' },
+          { status: 401 }
+        );
       }
     }
 
@@ -807,15 +773,69 @@ export async function POST(req: NextRequest) {
 
       const { error } = await supabaseAdmin
         .from('students')
-        .update({ is_approved: true })
+        .update({
+          is_approved: true,
+          is_verified: true,
+          verification_status: 'approved',
+          updated_at: new Date().toISOString(),
+        })
         .in('id', studentIds);
 
       if (error) {
         return NextResponse.json({ success: false, error: error.message }, { status: 500 });
       }
 
-      await logAdminAudit(admin.username, 'bulk_approve_students', `اعتماد جماعي لـ ${studentIds.length} طالب`, ip);
+      await logAdminAudit(admin.username, 'bulk_approve_students', `اعتماد جماعي وتفعيل لـ ${studentIds.length} طالب`, ip);
       return NextResponse.json({ success: true, count: studentIds.length });
+    }
+
+    if (action === 'get_full_backup') {
+      if (!admin.is_super_admin && !admin.permissions?.can_manage_students) {
+        return NextResponse.json({ success: false, error: 'غير مصرح بتحميل النسخ الاحتياطية' }, { status: 403 });
+      }
+
+      try {
+        const [studentsRes, subjectsRes, materialsRes, bundlesRes, quizzesRes, questionsRes, storiesRes] = await Promise.all([
+          supabaseAdmin.from('students').select('*').order('created_at', { ascending: false }),
+          supabaseAdmin.from('subjects').select('*').order('created_at', { ascending: false }),
+          supabaseAdmin.from('materials').select('*').order('created_at', { ascending: false }),
+          supabaseAdmin.from('lecture_bundles').select('*').order('created_at', { ascending: false }),
+          supabaseAdmin.from('quizzes').select('*').order('created_at', { ascending: false }),
+          supabaseAdmin.from('quiz_questions').select('*').order('order_index', { ascending: true }),
+          supabaseAdmin.from('legal_stories').select('*').order('created_at', { ascending: false }),
+        ]);
+
+        const sanitizedStudents = (studentsRes.data || []).map((s) => stripSensitiveFields(s));
+        const backupPayload = {
+          platform: 'منصة الدستور التعليمية (Al-Dustour)',
+          college: 'كلية الحقوق - جامعة مدينة السادات',
+          exported_at: new Date().toISOString(),
+          exported_by: admin.username,
+          data: {
+            students: sanitizedStudents,
+            subjects: subjectsRes.data || [],
+            materials: materialsRes.data || [],
+            lecture_bundles: bundlesRes.data || [],
+            quizzes: quizzesRes.data || [],
+            quiz_questions: questionsRes.data || [],
+            legal_stories: storiesRes.data || [],
+          },
+          counts: {
+            students: sanitizedStudents.length,
+            subjects: (subjectsRes.data || []).length,
+            materials: (materialsRes.data || []).length,
+            lecture_bundles: (bundlesRes.data || []).length,
+            quizzes: (quizzesRes.data || []).length,
+            quiz_questions: (questionsRes.data || []).length,
+            legal_stories: (storiesRes.data || []).length,
+          },
+        };
+
+        await logAdminAudit(admin.username, 'full_backup_download', 'تم تحميل نسخة احتياطية كاملة من قاعدة بيانات المنصة', ip);
+        return NextResponse.json({ success: true, backup: backupPayload });
+      } catch (bkErr: any) {
+        return NextResponse.json({ success: false, error: bkErr?.message || 'فشل توليد النسخة الاحتياطية' }, { status: 500 });
+      }
     }
 
     if (action === 'delete_student') {
@@ -855,6 +875,8 @@ export async function POST(req: NextRequest) {
         'settings',
         'subject_covers',
         'student_requests',
+        'bug_reports',
+        'active_presence',
       ]);
 
       if (!allowedTables.has(table)) {

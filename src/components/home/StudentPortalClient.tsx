@@ -29,6 +29,9 @@ import { LegalStoriesBar } from '@/components/home/LegalStoriesBar';
 import { FloatingWidgets } from '@/components/ui/FloatingWidgets';
 import { ThemeCharacterWidget } from '@/components/ui/ThemeCharacterWidget';
 import { StudentRequestModal } from '@/components/home/StudentRequestModal';
+import { PostActivationCelebration } from '@/components/auth/PostActivationCelebration';
+import { LivePresenceBadge } from '@/components/tools/LivePresenceBadge';
+import { GradeLeaderboard } from '@/components/quiz/GradeLeaderboard';
 import { ACADEMIC_YEARS, COLLEGE_NAME, DEFAULT_SITE_SETTINGS } from '@/lib/constants';
 import { SiteSettings } from '@/types';
 import { supabase } from '@/lib/supabase';
@@ -117,6 +120,9 @@ export default function StudentPortalClient() {
     <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-[#070c18] text-slate-900 dark:text-slate-100 relative overflow-x-hidden">
       {/* 1. Animated Splash Screen */}
       <SplashScreen />
+
+      {/* Post-Activation Celebration for newly verified students */}
+      <PostActivationCelebration />
 
       {/* 2. TASK 2: Phase 1 Cinematic Star & Logo Intro Overlay (~1.8s) */}
       <AnimatePresence>
@@ -217,16 +223,19 @@ export default function StudentPortalClient() {
         {/* HERO SECTION */}
         <section className="relative pt-8 pb-10 sm:pt-14 sm:pb-16 overflow-hidden text-center">
           <div className="max-w-5xl mx-auto px-4 sm:px-6 relative z-10">
-            {/* College Badge */}
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 text-xs sm:text-sm font-bold mb-4 shadow-sm"
-            >
-              <Scale className="w-4 h-4" />
-              <span>{settings.college_name || COLLEGE_NAME}</span>
-              <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-            </motion.div>
+            {/* College Badge & Live Studying Presence Counter */}
+            <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3 mb-4">
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 text-xs sm:text-sm font-bold shadow-sm"
+              >
+                <Scale className="w-4 h-4" />
+                <span>{settings.college_name || COLLEGE_NAME}</span>
+                <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+              </motion.div>
+              <LivePresenceBadge />
+            </div>
 
             {/* Main Headline */}
             <motion.h1
@@ -393,6 +402,11 @@ export default function StudentPortalClient() {
               );
             })}
           </div>
+        </section>
+
+        {/* GRADE LEADERBOARD (لوحة الشرف والأوائل 🏆) */}
+        <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <GradeLeaderboard />
         </section>
 
         {/* 30 GOLDEN FEATURES: DAILY MAXIM & CHALLENGE */}

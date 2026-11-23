@@ -74,13 +74,13 @@ async function getEmergencySwitches() {
 
 export async function POST(req: NextRequest) {
   const ip = getClientIp(req);
-  const rateLimit = checkRateLimit(ip, 8, 60);
+  const rateLimit = checkRateLimit(ip, 6, 60);
 
   if (!rateLimit.allowed) {
     return NextResponse.json(
       {
         success: false,
-        error: `تم تجاوز الحد المسموح من المحاولات (8 طلبات/دقيقة). يرجى الانتظار ${rateLimit.retryAfter || 60} ثانية.`,
+        error: `تم تجاوز الحد المسموح من المحاولات (6 طلبات/دقيقة). يرجى الانتظار ${rateLimit.retryAfter || 60} ثانية.`,
       },
       {
         status: 429,
@@ -110,28 +110,49 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      const email = sanitizeInput(body.email || '').toLowerCase();
+      const rawInput = sanitizeInput(body.phone || body.phoneOrEmail || body.email || '').trim();
       const password = body.password || '';
       const deviceFingerprint = body.deviceFingerprint || '';
       const deviceInfo = body.deviceInfo || '';
 
-      if (!email || !password) {
+      if (!rawInput || !password) {
         return NextResponse.json(
-          { success: false, error: 'يرجى إدخال البريد الإلكتروني وكلمة المرور' },
+          { success: false, error: 'يرجى إدخال رقم الهاتف المسجل وكلمة المرور' },
           { status: 400 }
         );
       }
 
-      // Query student
-      const { data: student, error: dbErr } = await supabaseAdmin
+      const cleanPhone = rawInput.replace(/[\s-]/g, '');
+      const syntheticEmail = `${cleanPhone}@hidden.aldostour.local`;
+
+      // Query student by phone, or synthetic hidden email, or legacy direct email
+      let student: any = null;
+      let dbErr: any = null;
+
+      // 1. Try phone match first
+      const { data: byPhone, error: phoneErr } = await supabaseAdmin
         .from('students')
         .select('*')
-        .eq('email', email)
+        .eq('phone', cleanPhone)
         .maybeSingle();
+
+      if (byPhone) {
+        student = byPhone;
+      } else {
+        // 2. Try synthetic email or legacy direct email
+        const { data: byEmail, error: emailErr } = await supabaseAdmin
+          .from('students')
+          .select('*')
+          .or(`email.eq.${syntheticEmail},email.eq.${rawInput.toLowerCase()}`)
+          .maybeSingle();
+
+        student = byEmail;
+        dbErr = emailErr || phoneErr;
+      }
 
       if (dbErr || !student) {
         return NextResponse.json(
-          { success: false, error: 'البريد الإلكتروني أو كلمة المرور غير صحيحة' },
+          { success: false, error: 'رقم الهاتف أو كلمة المرور غير صحيحة' },
           { status: 401 }
         );
       }
@@ -199,7 +220,10 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      // Update student activity
+      // Issue unique session token identifier for Single-Session Lock
+      const activeSessionToken = crypto.randomUUID();
+
+      // Update student activity & active session token
       await supabaseAdmin
         .from('students')
         .update({
@@ -208,6 +232,7 @@ export async function POST(req: NextRequest) {
           last_active_at: new Date().toISOString(),
           activity_score: (student.activity_score || 0) + 1,
           must_change_password: forcePasswordChange,
+          active_session_token: activeSessionToken,
         })
         .eq('id', student.id);
 
@@ -225,6 +250,7 @@ export async function POST(req: NextRequest) {
         id: student.id,
         student_code: student.student_code,
         email: student.email,
+        sessionTokenId: activeSessionToken,
         role: 'student',
       });
 
@@ -245,10 +271,9 @@ export async function POST(req: NextRequest) {
     // ACTION: REGISTER OFFICIAL STUDENT
     // -------------------------------------------------------------
     if (action === 'register') {
-      const email = sanitizeInput(body.email || '').toLowerCase();
       const fullName = sanitizeInput(body.full_name || '');
       const password = body.password || '';
-      const phone = sanitizeInput(body.phone || '');
+      const rawPhone = sanitizeInput(body.phone || '');
       const gender = body.gender || 'male';
       const academicYear = Number(body.academic_year) || 1;
       const studyType = body.study_type || 'انتظام';
@@ -261,9 +286,14 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ success: false, error: nameVal.error }, { status: 400 });
       }
 
-      if (!email || !password) {
+      const phoneVal = validateEgyptianPhone(rawPhone);
+      if (!phoneVal.isValid) {
+        return NextResponse.json({ success: false, error: phoneVal.error || 'يرجى إدخال رقم هاتف محمول مصري صحيح' }, { status: 400 });
+      }
+
+      if (!password) {
         return NextResponse.json(
-          { success: false, error: 'يرجى إدخال البريد الإلكتروني وكلمة المرور' },
+          { success: false, error: 'يرجى إدخال كلمة المرور' },
           { status: 400 }
         );
       }
@@ -275,12 +305,10 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      if (phone) {
-        const phoneVal = validateEgyptianPhone(phone);
-        if (!phoneVal.isValid) {
-          return NextResponse.json({ success: false, error: phoneVal.error }, { status: 400 });
-        }
-      }
+      const cleanPhone = rawPhone.trim().replace(/[\s-]/g, '');
+      const syntheticEmail = body.email && !body.email.includes('@hidden.aldostour.local')
+        ? sanitizeInput(body.email).toLowerCase()
+        : `${cleanPhone}@hidden.aldostour.local`;
 
       // Check emergency switches
       const switches = await getEmergencySwitches();
@@ -307,37 +335,21 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      // Check duplicate email
-      const { data: existingEmail } = await supabaseAdmin
+      // Check duplicate phone
+      const { data: existingPhone } = await supabaseAdmin
         .from('students')
         .select('id')
-        .eq('email', email)
+        .eq('phone', cleanPhone)
         .maybeSingle();
 
-      if (existingEmail) {
+      if (existingPhone) {
         return NextResponse.json(
           {
             success: false,
-            error: 'البريد الإلكتروني مسجل مسبقاً بالفعل، يمكنك تسجيل الدخول مباشرة',
+            error: 'رقم الهاتف مسجل مسبقاً بحساب طالب آخر، يمكنك تسجيل الدخول مباشرة',
           },
           { status: 409 }
         );
-      }
-
-      // Check duplicate phone if provided
-      if (phone) {
-        const { data: existingPhone } = await supabaseAdmin
-          .from('students')
-          .select('id')
-          .eq('phone', phone)
-          .maybeSingle();
-
-        if (existingPhone) {
-          return NextResponse.json(
-            { success: false, error: 'رقم الهاتف مسجل مسبقاً بحساب طالب آخر' },
-            { status: 409 }
-          );
-        }
       }
 
       const isManualApproval = switches.manual_approval_enabled === true;
@@ -359,7 +371,7 @@ export async function POST(req: NextRequest) {
         .insert({
           student_code: studentCode,
           full_name: fullName,
-          email,
+          email: syntheticEmail,
           password_hash: passwordHash,
           password_salt: salt,
           must_change_password: isUsingUnified,
@@ -367,9 +379,11 @@ export async function POST(req: NextRequest) {
           academic_year: academicYear,
           study_type: studyType,
           avatar_url: avatarUrl,
-          phone,
+          phone: cleanPhone,
           is_guest: false,
           is_approved: isApproved,
+          verification_status: isApproved ? 'approved' : 'pending',
+          welcome_shown: false,
           is_verified: false,
           is_banned: false,
           device_fingerprint: deviceFingerprint || null,
@@ -392,7 +406,6 @@ export async function POST(req: NextRequest) {
       const sessionToken = signToken({
         id: created.id,
         student_code: created.student_code,
-        email: created.email,
         role: 'student',
       });
 
@@ -405,6 +418,21 @@ export async function POST(req: NextRequest) {
 
       response.cookies.set('eldostour_student_token', sessionToken, getSecureCookieOptions());
       return response;
+    }
+
+    // -------------------------------------------------------------
+    // ACTION: MARK WELCOME SHOWN
+    // -------------------------------------------------------------
+    if (action === 'mark_welcome_shown') {
+      const studentId = body.student_id || body.studentId;
+      if (studentId) {
+        await supabaseAdmin
+          .from('students')
+          .update({ welcome_shown: true })
+          .eq('id', studentId);
+        return NextResponse.json({ success: true });
+      }
+      return NextResponse.json({ success: false, error: 'معرف الطالب مفقود' }, { status: 400 });
     }
 
     // -------------------------------------------------------------
@@ -680,7 +708,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ authenticated: false }, { status: 401 });
   }
 
-  const payload = verifyToken<{ id: string; student_code: string; role: string }>(token);
+  const payload = verifyToken<{ id: string; student_code: string; role: string; sessionTokenId?: string }>(token);
   if (!payload || !payload.id) {
     return NextResponse.json({ authenticated: false }, { status: 401 });
   }
@@ -693,6 +721,20 @@ export async function GET(req: NextRequest) {
 
   if (!student || student.is_banned) {
     const res = NextResponse.json({ authenticated: false }, { status: 401 });
+    res.cookies.delete('eldostour_student_token');
+    return res;
+  }
+
+  // Single-Session Lock: invalidate if sessionTokenId has been superseded by a newer login
+  if (
+    student.active_session_token &&
+    payload.sessionTokenId &&
+    student.active_session_token !== payload.sessionTokenId
+  ) {
+    const res = NextResponse.json(
+      { authenticated: false, error: 'تم تسجيل الدخول من جهاز آخر. تم إنهاء الجلسة القديمة لحماية الحساب.' },
+      { status: 401 }
+    );
     res.cookies.delete('eldostour_student_token');
     return res;
   }

@@ -21,6 +21,9 @@ export interface Student {
   is_verified?: boolean;
   is_banned?: boolean;
   must_change_password?: boolean;
+  welcome_shown?: boolean;
+  verification_status?: 'pending' | 'approved' | 'rejected';
+  active_session_token?: string | null;
   device_fingerprint?: string;
   last_device_info?: string;
   activity_score?: number;
@@ -32,17 +35,20 @@ export interface Student {
 
 export interface RegisterStudentData {
   full_name: string;
-  email: string;
+  email?: string;
   password: string;
   gender: StudentGender;
   academic_year: AcademicYearId;
   study_type?: StudyType;
   avatar_url?: string;
-  phone?: string;
+  phone: string;
   is_approved?: boolean;
   is_verified?: boolean;
   is_banned?: boolean;
   must_change_password?: boolean;
+  welcome_shown?: boolean;
+  verification_status?: 'pending' | 'approved' | 'rejected';
+  active_session_token?: string | null;
   device_fingerprint?: string;
   last_device_info?: string;
   activity_score?: number;
@@ -67,6 +73,7 @@ export interface AdminSecuritySettings {
   vault_enabled: boolean;
   vault_numeric_hash?: string;
   vault_complex_hash?: string;
+  vault_single_hash?: string;
   session_version: number;
   manual_approval_enabled: boolean;
   require_student_approval?: boolean;
@@ -82,6 +89,18 @@ export interface AdminSecuritySettings {
   platform_locked?: boolean;
   maintenance_mode?: boolean;
   updated_at?: string;
+}
+
+export interface BugReport {
+  id: string;
+  report_type: 'quiz' | 'lecture' | 'other';
+  target_id?: string;
+  target_title: string;
+  description: string;
+  student_name?: string;
+  student_phone?: string;
+  status: 'pending' | 'resolved';
+  created_at: string;
 }
 
 export interface SubAdminUser {

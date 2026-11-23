@@ -17,13 +17,13 @@ function hashSha256(str: string): string {
 
 export async function POST(req: NextRequest) {
   const ip = getClientIp(req);
-  const rateLimit = checkRateLimit(ip, 8, 60);
+  const rateLimit = checkRateLimit(ip, 6, 60);
 
   if (!rateLimit.allowed) {
     return NextResponse.json(
       {
         success: false,
-        error: `تم تجاوز الحد المسموح من المحاولات (8 طلبات/دقيقة). يرجى الانتظار ${rateLimit.retryAfter || 60} ثانية.`,
+        error: `تم تجاوز الحد المسموح من المحاولات (6 طلبات/دقيقة). يرجى الانتظار ${rateLimit.retryAfter || 60} ثانية.`,
       },
       {
         status: 429,

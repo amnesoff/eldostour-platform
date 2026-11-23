@@ -9,10 +9,8 @@ const supabaseServiceRoleKey =
   process.env.SUPABASE_SERVICE_ROLE_KEY ||
   process.env.SUPABASE_SERVICE_KEY ||
   process.env.SUPABASE_SECRET_KEY ||
-  process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY ||
-  process.env.SUPABASE_KEY ||
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-  '';
+  'placeholder-service-role-key';
 
 if (!process.env.SUPABASE_SERVICE_ROLE_KEY && !process.env.SUPABASE_SERVICE_KEY) {
   if (process.env.NODE_ENV !== 'production') {
