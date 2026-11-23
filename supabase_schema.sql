@@ -232,6 +232,29 @@ CREATE TABLE IF NOT EXISTS public.lecture_ratings (
 
 CREATE INDEX IF NOT EXISTS idx_lecture_ratings_bundle ON public.lecture_ratings(bundle_id);
 
+-- 10B. Subject Covers & YouTube-Style Previews (Two-Level Subject Hierarchy)
+CREATE TABLE IF NOT EXISTS public.subject_covers (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    subject_name TEXT NOT NULL,
+    year INTEGER NOT NULL CHECK (year >= 1 AND year <= 4),
+    subject_id UUID REFERENCES public.subjects(id) ON DELETE SET NULL,
+    cover_image_url TEXT NOT NULL,
+    cover_image_storage_path TEXT DEFAULT '',
+    preview_video_url TEXT DEFAULT '',
+    preview_video_storage_path TEXT DEFAULT '',
+    professor_name TEXT DEFAULT '',
+    description TEXT DEFAULT '',
+    order_index INTEGER DEFAULT 1,
+    created_at TIMESTAMPTZ DEFAULT now() NOT NULL
+);
+
+ALTER TABLE public.materials ADD COLUMN IF NOT EXISTS cover_id UUID REFERENCES public.subject_covers(id) ON DELETE SET NULL;
+ALTER TABLE public.quizzes ADD COLUMN IF NOT EXISTS cover_id UUID REFERENCES public.subject_covers(id) ON DELETE SET NULL;
+
+CREATE INDEX IF NOT EXISTS idx_subject_covers_year ON public.subject_covers(year);
+CREATE INDEX IF NOT EXISTS idx_materials_cover_id ON public.materials(cover_id);
+CREATE INDEX IF NOT EXISTS idx_quizzes_cover_id ON public.quizzes(cover_id);
+
 -- 11. French Legal Dictionary Terms Table
 CREATE TABLE IF NOT EXISTS public.french_terms (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -287,6 +310,7 @@ ALTER TABLE public.student_requests ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.lecture_bundles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.lecture_ratings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.french_terms ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.subject_covers ENABLE ROW LEVEL SECURITY;
 
 -- 14. Permissive Policies for Anon & Authenticated
 DO $$
@@ -296,7 +320,7 @@ DECLARE
         'subjects', 'materials', 'urgent_news', 'settings',
         'site_settings', 'site_sections', 'quizzes', 'quiz_questions',
         'quiz_submissions', 'student_requests', 'lecture_bundles',
-        'lecture_ratings', 'french_terms'
+        'lecture_ratings', 'french_terms', 'subject_covers'
     ];
 BEGIN
     FOREACH tbl IN ARRAY tables LOOP
@@ -410,3 +434,4 @@ ALTER PUBLICATION supabase_realtime ADD TABLE public.student_requests;
 ALTER PUBLICATION supabase_realtime ADD TABLE public.lecture_bundles;
 ALTER PUBLICATION supabase_realtime ADD TABLE public.lecture_ratings;
 ALTER PUBLICATION supabase_realtime ADD TABLE public.french_terms;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.subject_covers;

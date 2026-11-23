@@ -209,6 +209,72 @@ export async function uploadMaterialFile(
 }
 
 /**
+ * Upload a Subject Cover Image (Thumbnail) to Supabase Storage
+ */
+export async function uploadSubjectCoverImage(
+  file: File,
+  year: number,
+  onProgress?: (progress: number) => void
+): Promise<{ publicUrl: string; storagePath: string }> {
+  if (!isSupabaseConfigured()) {
+    throw new Error('إعدادات Supabase غير متصلة.');
+  }
+
+  const cleanFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+  const uniqueId = Math.random().toString(36).substring(2, 9);
+  const filePath = `year-${year}/covers/${Date.now()}_${uniqueId}_${cleanFileName}`;
+
+  onProgress?.(25);
+  const { error: uploadError } = await supabase.storage
+    .from(BUCKET_THUMBNAILS)
+    .upload(filePath, file, { cacheControl: '3600', upsert: false });
+
+  if (uploadError) throw uploadError;
+
+  onProgress?.(85);
+  const { data } = supabase.storage.from(BUCKET_THUMBNAILS).getPublicUrl(filePath);
+  onProgress?.(100);
+
+  return {
+    publicUrl: data.publicUrl,
+    storagePath: `${BUCKET_THUMBNAILS}/${filePath}`,
+  };
+}
+
+/**
+ * Upload a Subject Animated Preview Video (Short mp4/webm) to Supabase Storage
+ */
+export async function uploadSubjectPreviewVideo(
+  file: File,
+  year: number,
+  onProgress?: (progress: number) => void
+): Promise<{ publicUrl: string; storagePath: string }> {
+  if (!isSupabaseConfigured()) {
+    throw new Error('إعدادات Supabase غير متصلة.');
+  }
+
+  const cleanFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+  const uniqueId = Math.random().toString(36).substring(2, 9);
+  const filePath = `year-${year}/previews/${Date.now()}_${uniqueId}_${cleanFileName}`;
+
+  onProgress?.(25);
+  const { error: uploadError } = await supabase.storage
+    .from(BUCKET_VIDEOS)
+    .upload(filePath, file, { cacheControl: '3600', upsert: false });
+
+  if (uploadError) throw uploadError;
+
+  onProgress?.(85);
+  const { data } = supabase.storage.from(BUCKET_VIDEOS).getPublicUrl(filePath);
+  onProgress?.(100);
+
+  return {
+    publicUrl: data.publicUrl,
+    storagePath: `${BUCKET_VIDEOS}/${filePath}`,
+  };
+}
+
+/**
  * Delete a file from Supabase Storage
  */
 export async function deleteStorageFile(storagePath: string): Promise<boolean> {

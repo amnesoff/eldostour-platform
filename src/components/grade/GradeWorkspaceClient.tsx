@@ -6,17 +6,14 @@ import {
   ArrowRight,
   FileText,
   Video,
-  Flame,
   Download,
   CheckSquare,
-  Square,
   Search,
   Sparkles,
   Award,
-  Layers,
   RefreshCw,
   FolderArchive,
-  Shuffle,
+  ChevronLeft,
 } from 'lucide-react';
 import { Navbar } from '@/components/layout/Navbar';
 import { Footer } from '@/components/layout/Footer';
@@ -26,13 +23,21 @@ import { MaterialCard } from '@/components/home/MaterialCard';
 import { VideoModal } from '@/components/home/VideoModal';
 import { PdfModal } from '@/components/home/PdfModal';
 import { QuizPlayerModal } from '@/components/quiz/QuizPlayerModal';
-import { LectureBundleCard } from '@/components/bundles/LectureBundleCard';
-import { LectureBundleModal } from '@/components/bundles/LectureBundleModal';
+import { SubjectCoverCard } from '@/components/covers/SubjectCoverCard';
 import { ThemeCharacterWidget } from '@/components/ui/ThemeCharacterWidget';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { FloatingWidgets } from '@/components/ui/FloatingWidgets';
 import { ACADEMIC_YEARS, COLLEGE_NAME } from '@/lib/constants';
-import { AcademicYearId, Subject, Material, Quiz, LectureBundle, QuizQuestion } from '@/types';
+import {
+  AcademicYearId,
+  Subject,
+  Material,
+  Quiz,
+  SubjectCover,
+  QuizQuestion,
+  SiteSettings,
+} from '@/types';
+import { DEFAULT_SITE_SETTINGS } from '@/lib/constants';
 import { supabase } from '@/lib/supabase';
 import { useTheme } from '@/context/ThemeContext';
 
@@ -44,48 +49,94 @@ export default function GradeWorkspaceClient({ gradeId }: GradeWorkspaceClientPr
   const { occasionTheme } = useTheme();
   const gradeInfo = ACADEMIC_YEARS.find((y) => y.id === gradeId) || ACADEMIC_YEARS[0];
 
+  // Database States
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [materials, setMaterials] = useState<Material[]>([]);
-  const [bundles, setBundles] = useState<LectureBundle[]>([]);
   const [quizzes, setQuizzes] = useState<Quiz[]>([]);
+  const [covers, setCovers] = useState<SubjectCover[]>([]);
+  const [settings, setSettings] = useState<SiteSettings>(DEFAULT_SITE_SETTINGS);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [isGeneratingPracticeQuiz, setIsGeneratingPracticeQuiz] = useState(false);
 
-  // Filters with session persistence on refresh
-  const [activeTab, setActiveTabState] = useState<'all' | 'bundles' | 'pdf' | 'video' | 'summary' | 'quizzes'>('all');
+  // LEVEL 1 vs LEVEL 2 Navigation State
+  // selectedCover === null -> LEVEL 1 (Subject Covers Grid)
+  // selectedCover !== null -> LEVEL 2 (Inside Selected Subject)
+  const [selectedCover, setSelectedCover] = useState<SubjectCover | null>(null);
 
-  useEffect(() => {
-    const saved = sessionStorage.getItem(`eldostour_grade_${gradeId}_tab`);
-    if (saved && ['all', 'bundles', 'pdf', 'video', 'summary', 'quizzes'].includes(saved)) {
-      setActiveTabState(saved as any);
-    }
-  }, [gradeId]);
+  // LEVEL 2: 3 Fixed Square Tabs: 'pdf' (Right) | 'video' (Middle) | 'questions' (Left)
+  const [selectedSubjectTab, setSelectedSubjectTabState] = useState<'pdf' | 'video' | 'questions'>('pdf');
 
-  const setActiveTab = (tab: 'all' | 'bundles' | 'pdf' | 'video' | 'summary' | 'quizzes') => {
-    setActiveTabState(tab);
-    sessionStorage.setItem(`eldostour_grade_${gradeId}_tab`, tab);
-  };
-  const [selectedSubjectId, setSelectedSubjectId] = useState<string | 'all'>('all');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [cramMode, setCramMode] = useState(false);
-
-  // Multi-Select Download Mode
+  // Multi-Select Download Mode (in PDF Tab)
   const [multiSelectMode, setMultiSelectMode] = useState(false);
   const [selectedForDownload, setSelectedForDownload] = useState<string[]>([]);
   const [isDownloading, setIsDownloading] = useState(false);
+
+  // Search & Filters
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isGeneratingPracticeQuiz, setIsGeneratingPracticeQuiz] = useState(false);
 
   // Modals
   const [activeVideo, setActiveVideo] = useState<Material | null>(null);
   const [activePdf, setActivePdf] = useState<Material | null>(null);
   const [activeQuiz, setActiveQuiz] = useState<Quiz | null>(null);
-  const [activeBundle, setActiveBundle] = useState<LectureBundle | null>(null);
 
-  // Load data for this grade only
+  // Session Storage Persistence for Active Subject & Tab across F5 refresh
+  useEffect(() => {
+    try {
+      const savedTab = sessionStorage.getItem(`eldostour_grade_${gradeId}_subject_tab`);
+      if (savedTab && ['pdf', 'video', 'questions'].includes(savedTab)) {
+        setSelectedSubjectTabState(savedTab as any);
+      }
+
+      const savedCoverId = sessionStorage.getItem(`eldostour_grade_${gradeId}_selected_cover_id`);
+      if (savedCoverId && covers.length > 0) {
+        const found = covers.find((c) => c.id === savedCoverId);
+        if (found) setSelectedCover(found);
+      }
+    } catch {
+      // ignore
+    }
+  }, [gradeId, covers]);
+
+  const setSelectedSubjectTab = (tab: 'pdf' | 'video' | 'questions') => {
+    setSelectedSubjectTabState(tab);
+    try {
+      sessionStorage.setItem(`eldostour_grade_${gradeId}_subject_tab`, tab);
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleSelectCover = (cov: SubjectCover | null) => {
+    setSelectedCover(cov);
+    setSearchQuery('');
+    setMultiSelectMode(false);
+    setSelectedForDownload([]);
+    try {
+      if (cov) {
+        sessionStorage.setItem(`eldostour_grade_${gradeId}_selected_cover_id`, cov.id);
+      } else {
+        sessionStorage.removeItem(`eldostour_grade_${gradeId}_selected_cover_id`);
+      }
+    } catch {
+      // ignore
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  // Load Data for this Grade
   const loadGradeData = useCallback(async (manual = false) => {
     if (manual) setIsRefreshing(true);
     try {
-      // 1. Fetch Subjects for this grade
+      // 1. Fetch Subject Covers
+      const { data: covData } = await supabase
+        .from('subject_covers')
+        .select('*')
+        .eq('year', gradeId)
+        .order('order_index', { ascending: true })
+        .order('created_at', { ascending: false });
+
+      // 2. Fetch Subjects
       const { data: subData } = await supabase
         .from('subjects')
         .select('*')
@@ -94,23 +145,15 @@ export default function GradeWorkspaceClient({ gradeId }: GradeWorkspaceClientPr
 
       if (subData) setSubjects(subData as Subject[]);
 
-      // 2. Fetch Materials for this grade
+      // 3. Fetch Materials for this grade
       const { data: matData } = await supabase
         .from('materials')
         .select('*, subjects(name)')
         .eq('year', gradeId)
         .order('created_at', { ascending: false });
 
-      if (matData) setMaterials(matData as Material[]);
-
-      // 3. Fetch Lecture Bundles for this grade (Part 1.2)
-      const { data: bData } = await supabase
-        .from('lecture_bundles')
-        .select('*, subjects(name)')
-        .eq('year', gradeId)
-        .order('created_at', { ascending: false });
-
-      if (bData) setBundles(bData as LectureBundle[]);
+      const fetchedMaterials = (matData as Material[]) || [];
+      setMaterials(fetchedMaterials);
 
       // 4. Fetch Quizzes for this grade
       const { data: quizData } = await supabase
@@ -120,16 +163,51 @@ export default function GradeWorkspaceClient({ gradeId }: GradeWorkspaceClientPr
         .eq('is_active', true)
         .order('created_at', { ascending: false });
 
-      if (quizData) {
-        // Map questions
-        const mappedQuizzes = quizData.map((q: any) => ({
-          ...q,
-          questions: q.quiz_questions || [],
-        }));
-        setQuizzes(mappedQuizzes as Quiz[]);
+      const mappedQuizzes = ((quizData as any[]) || []).map((q: any) => ({
+        ...q,
+        questions: q.quiz_questions || [],
+        question_count: q.quiz_questions?.length || 0,
+      })) as Quiz[];
+      setQuizzes(mappedQuizzes);
+
+      // 5. Fetch General Settings
+      const { data: sData } = await supabase
+        .from('site_settings')
+        .select('value')
+        .eq('key', 'general')
+        .single();
+      if (sData?.value) {
+        setSettings((prev) => ({ ...prev, ...(sData.value as Partial<SiteSettings>) }));
       }
-    } catch {
-      // Keep clean empty states
+
+      // Map covers with counts
+      const rawCovers = (covData as SubjectCover[]) || [];
+      const computedCovers = rawCovers.map((cov) => {
+        const isCoverItem = (m: Material) =>
+          m.cover_id === cov.id ||
+          (cov.subject_id && m.subject_id === cov.subject_id) ||
+          m.subjects?.name?.trim().toLowerCase() === cov.subject_name.trim().toLowerCase();
+
+        const linkedPdfs = fetchedMaterials.filter((m) => isCoverItem(m) && m.file_type === 'pdf').length;
+        const linkedVids = fetchedMaterials.filter((m) => isCoverItem(m) && m.file_type === 'video').length;
+        const linkedQs = mappedQuizzes.filter(
+          (q) =>
+            q.cover_id === cov.id ||
+            (cov.subject_id && q.subject_id === cov.subject_id) ||
+            q.subjects?.name?.trim().toLowerCase() === cov.subject_name.trim().toLowerCase()
+        ).length;
+
+        return {
+          ...cov,
+          materials_count: linkedPdfs,
+          videos_count: linkedVids,
+          quizzes_count: linkedQs,
+        };
+      });
+
+      setCovers(computedCovers);
+    } catch (err) {
+      console.warn('Load grade data exception:', err);
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
@@ -142,10 +220,13 @@ export default function GradeWorkspaceClient({ gradeId }: GradeWorkspaceClientPr
     // Subscribe to realtime changes
     const channel = supabase
       .channel(`grade_realtime_${gradeId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'subject_covers', filter: `year=eq.${gradeId}` }, () => {
+        loadGradeData();
+      })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'materials', filter: `year=eq.${gradeId}` }, () => {
         loadGradeData();
       })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'subjects', filter: `year=eq.${gradeId}` }, () => {
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'quizzes', filter: `year=eq.${gradeId}` }, () => {
         loadGradeData();
       })
       .subscribe();
@@ -155,117 +236,112 @@ export default function GradeWorkspaceClient({ gradeId }: GradeWorkspaceClientPr
     };
   }, [gradeId, loadGradeData]);
 
-  // Filtered materials
-  const filteredMaterials = useMemo(() => {
-    return materials.filter((item) => {
-      // Tab filter
-      if (activeTab === 'pdf' && item.file_type !== 'pdf') return false;
-      if (activeTab === 'video' && item.file_type !== 'video') return false;
-      if (activeTab === 'summary' && item.category !== 'summary' && !item.title.includes('ملخص')) return false;
+  // Fallback synthesized covers if no subject_covers exist in DB yet
+  const displayCovers: SubjectCover[] = useMemo(() => {
+    if (covers.length > 0) return covers;
 
-      // Subject filter
-      if (selectedSubjectId !== 'all' && item.subject_id !== selectedSubjectId) return false;
-
-      // Cram Mode (Night-before-exam) filter
-      if (cramMode && !item.is_cram && !item.title.includes('مراجعة') && !item.title.includes('ليلة الامتحان')) {
-        return false;
-      }
-
-      // Search query
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase().trim();
-        const mTitle = item.title?.toLowerCase().includes(q);
-        const mDesc = item.description?.toLowerCase().includes(q);
-        const mSub = item.subjects?.name?.toLowerCase().includes(q);
-        if (!mTitle && !mDesc && !mSub) return false;
-      }
-
-      return true;
-    });
-  }, [materials, activeTab, selectedSubjectId, cramMode, searchQuery]);
-
-  // Filtered bundles
-  const filteredBundles = useMemo(() => {
-    return bundles.filter((b) => {
-      if (selectedSubjectId !== 'all' && b.subject_id !== selectedSubjectId) return false;
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase().trim();
-        const bTitle = b.title?.toLowerCase().includes(q);
-        const bProf = b.professor_name?.toLowerCase().includes(q);
-        const bSub = b.subjects?.name?.toLowerCase().includes(q);
-        if (!bTitle && !bProf && !bSub) return false;
-      }
-      return true;
-    });
-  }, [bundles, selectedSubjectId, searchQuery]);
-
-  // Feature #4: Auto-Generated Random Question Bank ("Random Practice Quiz")
-  const handleStartRandomPracticeQuiz = async () => {
-    setIsGeneratingPracticeQuiz(true);
-    try {
-      let allQuestions: QuizQuestion[] = [];
-      quizzes.forEach((q) => {
-        if (q.questions && q.questions.length > 0) {
-          allQuestions.push(...q.questions);
-        }
-      });
-
-      if (allQuestions.length === 0) {
-        const { data: dbQ } = await supabase
-          .from('quiz_questions')
-          .select('*')
-          .limit(30);
-        if (dbQ) allQuestions = dbQ as QuizQuestion[];
-      }
-
-      if (allQuestions.length === 0) {
-        alert('لا توجد أسئلة مضافة في بنك أسئلة هذه الفرقة حالياً.');
-        return;
-      }
-
-      const shuffled = [...allQuestions].sort(() => 0.5 - Math.random());
-      const selected = shuffled.slice(0, 10);
-
-      const practiceQuiz: Quiz = {
-        id: 'practice-random',
-        title: `اختبار تدريبي عشوائي - ${gradeInfo.name} 🎲`,
-        description: 'اختبار تم توليده عشوائياً من بنك أسئلة الفرقة لاختبار معلوماتك وتثبيت القواعد.',
+    // Synthesize from existing subjects to avoid empty screen before admin uploads covers
+    return subjects.map((sub) => {
+      const subMats = materials.filter((m) => m.subject_id === sub.id);
+      const subQs = quizzes.filter((q) => q.subject_id === sub.id);
+      return {
+        id: `subject-${sub.id}`,
+        subject_name: sub.name,
         year: gradeId,
-        subject_id: selectedSubjectId !== 'all' ? selectedSubjectId : (subjects[0]?.id || ''),
-        duration_minutes: 15,
-        is_active: true,
-        created_at: new Date().toISOString(),
-        questions: selected,
+        subject_id: sub.id,
+        cover_image_url: '/logo.png',
+        preview_video_url: '',
+        professor_name: '',
+        description: 'انقر لاستعراض المحاضرات والـ PDF، شروحات الفيديو، وبنك الأسئلة.',
+        materials_count: subMats.filter((m) => m.file_type === 'pdf').length,
+        videos_count: subMats.filter((m) => m.file_type === 'video').length,
+        quizzes_count: subQs.length,
+        created_at: sub.created_at,
       };
+    });
+  }, [covers, subjects, materials, quizzes, gradeId]);
 
-      setActiveQuiz(practiceQuiz);
-    } catch {
-      alert('حدث خطأ أثناء توليد الاختبار العشوائي');
-    } finally {
-      setIsGeneratingPracticeQuiz(false);
-    }
-  };
+  // Filtered covers for Level 1 Search
+  const filteredCovers = useMemo(() => {
+    if (!searchQuery.trim()) return displayCovers;
+    const q = searchQuery.toLowerCase().trim();
+    return displayCovers.filter(
+      (c) =>
+        c.subject_name.toLowerCase().includes(q) ||
+        c.professor_name?.toLowerCase().includes(q) ||
+        c.description?.toLowerCase().includes(q)
+    );
+  }, [displayCovers, searchQuery]);
 
-  // Toggle single download selection
+  // Helper to test if item belongs to selected cover
+  const isItemInSelectedCover = useCallback(
+    (itemCoverId?: string | null, itemSubjectId?: string, itemSubjectName?: string) => {
+      if (!selectedCover) return false;
+      if (itemCoverId && itemCoverId === selectedCover.id) return true;
+      if (selectedCover.subject_id && itemSubjectId === selectedCover.subject_id) return true;
+      if (
+        itemSubjectName &&
+        itemSubjectName.trim().toLowerCase() === selectedCover.subject_name.trim().toLowerCase()
+      ) {
+        return true;
+      }
+      return false;
+    },
+    [selectedCover]
+  );
+
+  // Content for Level 2 (Selected Subject)
+  const subjectPdfs = useMemo(() => {
+    if (!selectedCover) return [];
+    return materials.filter(
+      (m) =>
+        m.file_type === 'pdf' &&
+        isItemInSelectedCover(m.cover_id, m.subject_id, m.subjects?.name) &&
+        (!searchQuery.trim() ||
+          m.title.toLowerCase().includes(searchQuery.toLowerCase().trim()) ||
+          m.description?.toLowerCase().includes(searchQuery.toLowerCase().trim()))
+    );
+  }, [materials, selectedCover, isItemInSelectedCover, searchQuery]);
+
+  const subjectVideos = useMemo(() => {
+    if (!selectedCover) return [];
+    return materials.filter(
+      (m) =>
+        m.file_type === 'video' &&
+        isItemInSelectedCover(m.cover_id, m.subject_id, m.subjects?.name) &&
+        (!searchQuery.trim() ||
+          m.title.toLowerCase().includes(searchQuery.toLowerCase().trim()) ||
+          m.description?.toLowerCase().includes(searchQuery.toLowerCase().trim()))
+    );
+  }, [materials, selectedCover, isItemInSelectedCover, searchQuery]);
+
+  const subjectQuizzes = useMemo(() => {
+    if (!selectedCover) return [];
+    return quizzes.filter(
+      (q) =>
+        isItemInSelectedCover(q.cover_id, q.subject_id, q.subjects?.name) &&
+        (!searchQuery.trim() ||
+          q.title.toLowerCase().includes(searchQuery.toLowerCase().trim()) ||
+          q.description?.toLowerCase().includes(searchQuery.toLowerCase().trim()))
+    );
+  }, [quizzes, selectedCover, isItemInSelectedCover, searchQuery]);
+
+  // Bulk Download Handlers
   const toggleSelectForDownload = (id: string) => {
     setSelectedForDownload((prev) =>
       prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
     );
   };
 
-  // Select all visible downloadable materials
   const handleSelectAllDownloads = () => {
-    const downloadables = filteredMaterials
-      .filter((m) => m.file_type === 'pdf')
-      .map((m) => m.id);
-    if (selectedForDownload.length === downloadables.length) {
+    const allPdfIds = subjectPdfs.map((m) => m.id);
+    if (selectedForDownload.length === allPdfIds.length) {
       setSelectedForDownload([]);
     } else {
-      setSelectedForDownload(downloadables);
+      setSelectedForDownload(allPdfIds);
     }
   };
 
-  // Perform bulk download
   const handleBulkDownload = async () => {
     const selectedItems = materials.filter((m) => selectedForDownload.includes(m.id));
     if (selectedItems.length === 0) return;
@@ -281,7 +357,6 @@ export default function GradeWorkspaceClient({ gradeId }: GradeWorkspaceClientPr
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
-        // Small delay to prevent browser popup block
         await new Promise((r) => setTimeout(r, 600));
       } catch (err) {
         console.warn('Download error:', err);
@@ -290,26 +365,75 @@ export default function GradeWorkspaceClient({ gradeId }: GradeWorkspaceClientPr
     setIsDownloading(false);
   };
 
+  // Random Practice Quiz within this subject
+  const handleStartRandomPracticeQuiz = async () => {
+    setIsGeneratingPracticeQuiz(true);
+    try {
+      const subjectQuestions: QuizQuestion[] = [];
+      subjectQuizzes.forEach((q) => {
+        if (q.questions && q.questions.length > 0) {
+          subjectQuestions.push(...q.questions);
+        }
+      });
+
+      if (subjectQuestions.length === 0) {
+        alert('لا توجد أسئلة مضافة في بنك أسئلة هذه المادة حالياً.');
+        return;
+      }
+
+      const shuffled = [...subjectQuestions].sort(() => 0.5 - Math.random());
+      const selected = shuffled.slice(0, 10);
+
+      const practiceQuiz: Quiz = {
+        id: 'practice-random',
+        title: `اختبار تدريبي سريع - ${selectedCover?.subject_name || ''} 🎲`,
+        description: 'اختبار تم توليده عشوائياً من بنك أسئلة المادة لاختبار معلوماتك وتثبيت القواعد القانونية.',
+        year: gradeId,
+        subject_id: selectedCover?.subject_id || (subjects[0]?.id || ''),
+        duration_minutes: 15,
+        is_active: true,
+        created_at: new Date().toISOString(),
+        questions: selected,
+      };
+
+      setActiveQuiz(practiceQuiz);
+    } catch {
+      alert('حدث خطأ أثناء توليد الاختبار العشوائي');
+    } finally {
+      setIsGeneratingPracticeQuiz(false);
+    }
+  };
+
   return (
-    <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-[#070c18] text-slate-900 dark:text-slate-100 relative">
+    <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-[#070c18] text-slate-900 dark:text-slate-100 relative overflow-x-hidden" dir="rtl">
       <BackgroundWatermark />
       <OccasionThemeOverlay theme={occasionTheme || 'default'} />
       <Navbar />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
-        {/* Dynamic Breadcrumbs & Back Button */}
+        {/* Dynamic Breadcrumbs */}
         <div className="flex items-center justify-between gap-3 text-xs text-slate-500 dark:text-slate-400">
           <nav className="flex items-center gap-2">
-            <Link href="/" className="hover:text-amber-500 transition-colors">
+            <Link href="/" className="hover:text-amber-500 transition-colors font-medium">
               الرئيسية
             </Link>
             <span>/</span>
-            <span className="text-amber-500 font-bold">{gradeInfo.name}</span>
-            {selectedSubjectId !== 'all' && (
+            {selectedCover ? (
+              <button
+                onClick={() => handleSelectCover(null)}
+                className="hover:text-amber-500 transition-colors font-medium"
+              >
+                {gradeInfo.name}
+              </button>
+            ) : (
+              <span className="text-amber-500 font-bold">{gradeInfo.name}</span>
+            )}
+
+            {selectedCover && (
               <>
                 <span>/</span>
-                <span className="text-slate-700 dark:text-slate-200">
-                  {subjects.find((s) => s.id === selectedSubjectId)?.name}
+                <span className="text-amber-500 font-bold truncate max-w-[180px] sm:max-w-none">
+                  {selectedCover.subject_name}
                 </span>
               </>
             )}
@@ -317,451 +441,495 @@ export default function GradeWorkspaceClient({ gradeId }: GradeWorkspaceClientPr
 
           <Link
             href="/"
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-xs transition-all active:scale-95"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-xs transition-all active:scale-95 shrink-0"
           >
             <ArrowRight className="w-3.5 h-3.5" />
             <span>العودة للرئيسية</span>
           </Link>
         </div>
 
-        {/* Grade Banner */}
-        <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-slate-900 via-[#0B132B] to-slate-900 border border-amber-500/30 p-6 sm:p-8 text-white shadow-xl">
-          <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
-            <div>
-              <div className="flex items-center gap-2 mb-2">
-                <span className="px-3 py-0.5 rounded-full bg-amber-500 text-slate-950 font-black text-xs">
-                  {gradeInfo.badge}
-                </span>
-                <span className="text-xs text-amber-300/80 font-medium">
-                  {COLLEGE_NAME}
-                </span>
-              </div>
-
-              <h1 className="text-2xl sm:text-3xl font-black text-white">
-                {gradeInfo.name}
-              </h1>
-              <p className="text-xs sm:text-sm text-slate-300 mt-1 max-w-xl leading-relaxed">
-                {gradeInfo.description}
-              </p>
-            </div>
-
-            {/* Quick Actions (Cram Mode + Multi-Download + Sync) */}
-            <div className="flex flex-wrap items-center gap-2.5">
-              {/* Cram Mode Toggle (وضع ليلة الامتحان) */}
-              <button
-                onClick={() => setCramMode(!cramMode)}
-                className={`flex items-center gap-1.5 px-3.5 py-2 rounded-2xl text-xs font-bold transition-all border ${
-                  cramMode
-                    ? 'bg-red-600 text-white border-red-400 shadow-lg shadow-red-600/30 animate-pulse'
-                    : 'bg-white/10 hover:bg-white/20 text-slate-200 border-white/10'
-                }`}
-                title="وضع ليلة الامتحان: تصفية المراجعات النهائية والملخصات المركزة فقط"
-              >
-                <Flame className="w-4 h-4 text-yellow-300" />
-                <span>{cramMode ? 'وضع ليلة الامتحان مفعل' : 'وضع ليلة الامتحان'}</span>
-              </button>
-
-              {/* Multi-Download Toggle */}
-              <button
-                onClick={() => {
-                  setMultiSelectMode(!multiSelectMode);
-                  setSelectedForDownload([]);
-                }}
-                className={`flex items-center gap-1.5 px-3.5 py-2 rounded-2xl text-xs font-bold transition-all border ${
-                  multiSelectMode
-                    ? 'bg-teal-600 text-white border-teal-400 shadow-md'
-                    : 'bg-white/10 hover:bg-white/20 text-slate-200 border-white/10'
-                }`}
-              >
-                <CheckSquare className="w-4 h-4" />
-                <span>{multiSelectMode ? 'إلغاء التحديد' : 'تحديد للتنزيل'}</span>
-              </button>
-
-              {/* Refresh */}
-              <button
-                onClick={() => loadGradeData(true)}
-                disabled={isRefreshing}
-                className="p-2 rounded-2xl bg-white/10 hover:bg-white/20 text-slate-200 transition-colors"
-                title="تحديث فوري"
-              >
-                <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Floating Multi-Download Action Bar */}
-        {multiSelectMode && (
-          <div className="sticky top-20 z-30 p-3 rounded-2xl bg-teal-900/90 text-white border border-teal-400 shadow-xl flex items-center justify-between gap-3 text-xs backdrop-blur-md">
-            <div className="flex items-center gap-2">
-              <button
-                onClick={handleSelectAllDownloads}
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/20 hover:bg-white/30 font-bold"
-              >
-                <span>تحديد الكل</span>
-              </button>
-              <span>تم تحديد: {selectedForDownload.length} ملف</span>
-            </div>
-
-            <button
-              onClick={handleBulkDownload}
-              disabled={selectedForDownload.length === 0 || isDownloading}
-              className="px-4 py-1.5 rounded-xl bg-white text-teal-950 font-black flex items-center gap-1.5 hover:bg-teal-100 transition-colors disabled:opacity-50"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span>{isDownloading ? 'جارٍ التنزيل...' : 'تنزيل المحدد دفعة واحدة'}</span>
-            </button>
-          </div>
-        )}
-
-        {/* Workspace Tabs: All, Bundles, PDFs, Videos, Summaries, Quizzes */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-2 border-b border-slate-200 dark:border-slate-800">
-          <button
-            onClick={() => setActiveTab('all')}
-            className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap transition-all border ${
-              activeTab === 'all'
-                ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-md'
-                : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-800'
-            }`}
-          >
-            <Layers className="w-4 h-4" />
-            <span>الكل ({materials.length + bundles.length})</span>
-          </button>
-
-          {/* Bundles Tab */}
-          <button
-            onClick={() => setActiveTab('bundles')}
-            className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap transition-all border ${
-              activeTab === 'bundles'
-                ? 'bg-amber-600 text-white border-amber-500 shadow-md'
-                : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-800'
-            }`}
-          >
-            <FolderArchive className="w-4 h-4 text-amber-500" />
-            <span>باقات المحاضرات ({bundles.length})</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('pdf')}
-            className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap transition-all border ${
-              activeTab === 'pdf'
-                ? 'bg-red-500 text-white border-red-400 shadow-md'
-                : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-800'
-            }`}
-          >
-            <FileText className="w-4 h-4 text-red-500" />
-            <span>محاضرات PDF</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('video')}
-            className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap transition-all border ${
-              activeTab === 'video'
-                ? 'bg-blue-600 text-white border-blue-400 shadow-md'
-                : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-800'
-            }`}
-          >
-            <Video className="w-4 h-4 text-blue-500" />
-            <span>فيديوهات مباشرة</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('summary')}
-            className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap transition-all border ${
-              activeTab === 'summary'
-                ? 'bg-emerald-600 text-white border-emerald-400 shadow-md'
-                : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-800'
-            }`}
-          >
-            <Sparkles className="w-4 h-4 text-emerald-500" />
-            <span>ملخصات ومراجعات</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('quizzes')}
-            className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap transition-all border ${
-              activeTab === 'quizzes'
-                ? 'bg-purple-600 text-white border-purple-400 shadow-md'
-                : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-800'
-            }`}
-          >
-            <Award className="w-4 h-4 text-purple-500" />
-            <span>اختبارات الفرقة ({quizzes.length})</span>
-          </button>
-        </div>
-
-        {/* Subjects Pills Filter */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-1">
-          <button
-            onClick={() => setSelectedSubjectId('all')}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-colors border ${
-              selectedSubjectId === 'all'
-                ? 'bg-slate-800 text-white border-slate-700'
-                : 'bg-slate-100 dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800'
-            }`}
-          >
-            جميع المواد
-          </button>
-
-          {subjects.map((sub) => (
-            <button
-              key={sub.id}
-              onClick={() => setSelectedSubjectId(sub.id)}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-colors border ${
-                selectedSubjectId === sub.id
-                  ? 'bg-amber-500 text-slate-950 border-amber-400'
-                  : 'bg-slate-100 dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800'
-              }`}
-            >
-              {sub.name}
-            </button>
-          ))}
-        </div>
-
-        {/* Search Input */}
-        <div className="relative">
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder={`ابحث داخل ${gradeInfo.name} بالاسم أو المادة...`}
-            className="w-full h-11 pr-10 pl-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs sm:text-sm focus:border-amber-500 outline-none"
-          />
-          <Search className="w-4 h-4 text-slate-400 absolute right-3.5 top-1/2 -translate-y-1/2" />
-        </div>
-
-        {/* Main Content Area */}
-        {activeTab === 'quizzes' ? (
-          /* Quizzes List for this Grade + Feature #4 Random Question Bank */
+        {/* ==================================================================== */}
+        {/* LEVEL 1 — Academic Year Landing View (Subject Covers Grid) */}
+        {/* ==================================================================== */}
+        {!selectedCover && (
           <div className="space-y-6">
-            {/* Feature #4: Auto-Generated Random Question Bank ("Random Practice Quiz") */}
-            <div className="p-5 sm:p-6 rounded-3xl bg-gradient-to-r from-purple-900/60 via-indigo-950 to-slate-900 border border-purple-500/30 text-white flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-xl">
-              <div>
-                <div className="flex items-center gap-2 mb-1.5">
-                  <span className="px-2.5 py-0.5 rounded-full bg-purple-500 text-white font-black text-[11px] shadow-sm">
-                    بنك الأسئلة الذكي
-                  </span>
-                  <h3 className="text-base sm:text-lg font-black text-white">
-                    اختبار تدريبي عشوائي (Random Practice Quiz)
-                  </h3>
-                </div>
-                <p className="text-xs text-slate-300 max-w-xl leading-relaxed">
-                  توليد اختبار تدريبي فوري بسحب 10 أسئلة عشوائية من جميع موضوعات {gradeInfo.name} لتثبيت المعلومة واختبار مستواك قبل الامتحان.
-                </p>
-              </div>
+            {/* Grade Header Banner */}
+            <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-slate-900 via-[#0B132B] to-slate-900 border border-amber-500/30 p-6 sm:p-8 text-white shadow-xl">
+              <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+                <div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="px-3 py-0.5 rounded-full bg-amber-500 text-slate-950 font-black text-xs">
+                      {gradeInfo.badge}
+                    </span>
+                    <span className="text-xs text-amber-300/80 font-medium">
+                      {COLLEGE_NAME}
+                    </span>
+                  </div>
 
-              <button
-                onClick={handleStartRandomPracticeQuiz}
-                disabled={isGeneratingPracticeQuiz}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-xs sm:text-sm shadow-lg shadow-amber-500/20 transition-all active:scale-95 disabled:opacity-50 shrink-0"
-              >
-                <Shuffle className="w-4 h-4" />
-                <span>بدء اختبار عشوائي للتمرين 🎲</span>
-              </button>
+                  <h1 className="text-2xl sm:text-3xl font-black text-white">
+                    {gradeInfo.name}
+                  </h1>
+                  <p className="text-xs sm:text-sm text-slate-300 mt-1 max-w-xl leading-relaxed">
+                    {gradeInfo.description}
+                  </p>
+                </div>
+
+                {/* Refresh and Counter */}
+                <div className="flex items-center gap-3">
+                  <span className="text-xs font-semibold px-3 py-1.5 rounded-xl bg-white/10 text-amber-300 border border-white/10">
+                    {displayCovers.length} مواد دراسية
+                  </span>
+
+                  <button
+                    onClick={() => loadGradeData(true)}
+                    disabled={isRefreshing}
+                    className="p-2.5 rounded-2xl bg-white/10 hover:bg-white/20 text-slate-200 transition-colors"
+                    title="تحديث فوري"
+                  >
+                    <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+                  </button>
+                </div>
+              </div>
             </div>
 
-            {quizzes.length > 0 ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {quizzes.map((q) => (
-                  <div
-                    key={q.id}
-                    className="p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col justify-between"
-                  >
-                    <div>
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-purple-500/15 text-purple-600 dark:text-purple-400">
-                          {q.subjects?.name || 'مادة تخصصية'}
-                        </span>
-                        <span className="text-xs text-slate-400">
-                          ⏱️ {q.duration_minutes || 15} دقيقة
-                        </span>
-                      </div>
-
-                      <h3 className="text-base font-bold text-slate-900 dark:text-white mb-2">
-                        {q.title}
-                      </h3>
-                      {q.description && (
-                        <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed mb-4">
-                          {q.description}
-                        </p>
-                      )}
-                    </div>
-
-                    <button
-                      onClick={() => setActiveQuiz(q)}
-                      className="w-full py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs shadow-md transition-colors flex items-center justify-center gap-1.5"
-                    >
-                      <Award className="w-4 h-4" />
-                      <span>بدء الاختبار التفاعلي</span>
-                    </button>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <EmptyState
-                title="لا توجد اختبارات مضافة لهذه الفرقة حالياً"
-                description="سيقوم المشرفون برفع اختبارات تدريبية دورية لقياس المستوى."
-                icon="book"
+            {/* Search Input for Subject Covers */}
+            <div className="relative">
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder={`ابحث عن مادة أو دكتور في ${gradeInfo.name}...`}
+                className="w-full h-12 pr-11 pl-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs sm:text-sm text-slate-900 dark:text-white focus:border-amber-500 outline-none shadow-sm"
               />
-            )}
-          </div>
-        ) : activeTab === 'bundles' ? (
-          /* Bundles Only Grid (Part 1.2) */
-          <div>
-            {filteredBundles.length > 0 ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                {filteredBundles.map((b) => (
-                  <LectureBundleCard
-                    key={b.id}
-                    bundle={b}
-                    onOpenBundle={setActiveBundle}
+              <Search className="w-4 h-4 text-slate-400 absolute right-4 top-1/2 -translate-y-1/2" />
+            </div>
+
+            {/* Subject Covers Grid (Large Cards with YouTube-Style Animated Previews) */}
+            {isLoading ? (
+              <div className="py-20 flex flex-col items-center justify-center text-slate-400 gap-3">
+                <RefreshCw className="w-7 h-7 animate-spin text-amber-500" />
+                <span className="text-sm font-semibold">جارٍ تحميل مواد {gradeInfo.name}...</span>
+              </div>
+            ) : filteredCovers.length === 0 ? (
+              <EmptyState
+                icon="book"
+                title="لا توجد مواد مضافة حالياً"
+                description={
+                  searchQuery
+                    ? 'لم يتم العثور على مواد تطابق بحثك. جرب كلمات بحث أخرى.'
+                    : `لم يتم رفع مواد دراسية لـ ${gradeInfo.name} حتى الآن.`
+                }
+              />
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                {filteredCovers.map((cov) => (
+                  <SubjectCoverCard
+                    key={cov.id}
+                    cover={cov}
+                    onClick={() => handleSelectCover(cov)}
                   />
                 ))}
               </div>
-            ) : (
-              <EmptyState
-                title="لا توجد باقات محاضرات مضافة لهذه الفرقة حالياً"
-                description="سيتم إدراج باقات المحاضرات الشاملة ذات الأغلفة المخصصة وفيديوهات الشرح هنا فور نشرها."
-                icon="file"
-              />
             )}
           </div>
-        ) : (
-          /* Materials Grid (All, PDFs, Videos, Summaries) */
-          <div className="space-y-8">
-            {/* In 'all' tab: Show bundles section at top if any exist */}
-            {activeTab === 'all' && filteredBundles.length > 0 && (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-800">
-                  <div className="flex items-center gap-2">
-                    <FolderArchive className="w-5 h-5 text-amber-500" />
-                    <h3 className="text-base font-black text-slate-900 dark:text-white">
-                      باقات المحاضرات الشاملة (فيديو + ملخصات + أسئلة):
-                    </h3>
-                  </div>
-                  <span className="text-xs text-amber-500 font-bold">
-                    {filteredBundles.length} باقة معتمدة
-                  </span>
-                </div>
+        )}
 
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                  {filteredBundles.map((b) => (
-                    <LectureBundleCard
-                      key={b.id}
-                      bundle={b}
-                      onOpenBundle={setActiveBundle}
-                    />
-                  ))}
+        {/* ==================================================================== */}
+        {/* LEVEL 2 — Inside a Selected Subject (3 Fixed Square Tabs) */}
+        {/* ==================================================================== */}
+        {selectedCover && (
+          <div className="space-y-6 animate-fadeIn">
+            {/* Top Bar: Back to Subjects Button + Subject Name + Search */}
+            <div className="p-4 sm:p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-md flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="flex items-center gap-4">
+                {/* Prominent Back to Subjects Button */}
+                <button
+                  onClick={() => handleSelectCover(null)}
+                  className="flex items-center gap-2 px-4 sm:px-5 h-12 rounded-2xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-xs sm:text-sm shadow-md shadow-amber-500/20 transition-all active:scale-95 shrink-0 min-h-[48px]"
+                  title="العودة لقائمة المواد"
+                >
+                  <ArrowRight className="w-4 h-4" />
+                  <span>← العودة للمواد</span>
+                </button>
+
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                      {gradeInfo.name}
+                    </span>
+                    {selectedCover.professor_name && (
+                      <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                        {selectedCover.professor_name}
+                      </span>
+                    )}
+                  </div>
+                  <h2 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white mt-1">
+                    {selectedCover.subject_name}
+                  </h2>
                 </div>
               </div>
-            )}
 
-            {/* Individual Materials List */}
-            <div>
-              {activeTab === 'all' && filteredBundles.length > 0 && (
-                <div className="flex items-center gap-2 pb-2 mb-4 border-b border-slate-200 dark:border-slate-800">
-                  <FileText className="w-5 h-5 text-red-500" />
-                  <h3 className="text-base font-black text-slate-900 dark:text-white">
-                    المحاضرات الفردية والمذكرات:
-                  </h3>
-                </div>
-              )}
+              {/* Search Inside this Subject */}
+              <div className="relative w-full md:w-72">
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="بحث داخل هذه المادة..."
+                  className="w-full h-11 pr-10 pl-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs focus:border-amber-500 outline-none"
+                />
+                <Search className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2" />
+              </div>
+            </div>
 
-              {isLoading ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                  {[1, 2, 3, 4, 5, 6].map((n) => (
-                    <div
-                      key={n}
-                      className="h-56 rounded-3xl bg-slate-200/60 dark:bg-slate-800/40 animate-pulse border border-slate-200 dark:border-slate-800"
-                    />
-                  ))}
+            {/* 3 Fixed Side-by-Side Square-Styled Buttons (Strict RTL Order) */}
+            {/* 1st (Right): المحاضرات والـ PDF | 2nd (Middle): شرح الفيديوهات | 3rd (Left): بنك الأسئلة */}
+            <div className="grid grid-cols-3 gap-2.5 sm:gap-4 w-full">
+              {/* 1st (Right): المحاضرات والـ PDF */}
+              <button
+                type="button"
+                onClick={() => setSelectedSubjectTab('pdf')}
+                className={`flex flex-col items-center justify-center p-3 sm:p-5 rounded-2xl border transition-all text-center min-h-[96px] sm:min-h-[116px] group active:scale-95 ${
+                  selectedSubjectTab === 'pdf'
+                    ? 'bg-red-500 text-white border-red-400 shadow-xl shadow-red-500/30 ring-2 ring-red-400'
+                    : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-red-400/50 hover:bg-red-500/[0.03]'
+                }`}
+              >
+                <div
+                  className={`p-2 rounded-xl mb-1.5 transition-transform group-hover:scale-110 ${
+                    selectedSubjectTab === 'pdf' ? 'bg-white/20' : 'bg-red-500/10'
+                  }`}
+                >
+                  <FileText
+                    className={`w-5 h-5 sm:w-6 sm:h-6 ${
+                      selectedSubjectTab === 'pdf' ? 'text-white' : 'text-red-500'
+                    }`}
+                  />
                 </div>
-              ) : filteredMaterials.length > 0 ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                  {filteredMaterials.map((item) => {
-                    const isSelected = selectedForDownload.includes(item.id);
-                    return (
-                      <div key={item.id} className="relative">
-                        {/* Checkbox for Multi-Select Download */}
-                        {multiSelectMode && item.file_type === 'pdf' && (
+                <span className="text-xs sm:text-sm font-black tracking-tight line-clamp-1">
+                  المحاضرات والـ PDF
+                </span>
+                <span
+                  className={`text-[10px] sm:text-xs font-bold mt-1 px-2.5 py-0.5 rounded-full ${
+                    selectedSubjectTab === 'pdf'
+                      ? 'bg-white/25 text-white'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
+                  }`}
+                >
+                  {subjectPdfs.length} ملف
+                </span>
+              </button>
+
+              {/* 2nd (Middle): شرح الفيديوهات */}
+              <button
+                type="button"
+                onClick={() => setSelectedSubjectTab('video')}
+                className={`flex flex-col items-center justify-center p-3 sm:p-5 rounded-2xl border transition-all text-center min-h-[96px] sm:min-h-[116px] group active:scale-95 ${
+                  selectedSubjectTab === 'video'
+                    ? 'bg-blue-600 text-white border-blue-400 shadow-xl shadow-blue-600/30 ring-2 ring-blue-400'
+                    : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-blue-400/50 hover:bg-blue-600/[0.03]'
+                }`}
+              >
+                <div
+                  className={`p-2 rounded-xl mb-1.5 transition-transform group-hover:scale-110 ${
+                    selectedSubjectTab === 'video' ? 'bg-white/20' : 'bg-blue-500/10'
+                  }`}
+                >
+                  <Video
+                    className={`w-5 h-5 sm:w-6 sm:h-6 ${
+                      selectedSubjectTab === 'video' ? 'text-white' : 'text-blue-500'
+                    }`}
+                  />
+                </div>
+                <span className="text-xs sm:text-sm font-black tracking-tight line-clamp-1">
+                  شرح الفيديوهات
+                </span>
+                <span
+                  className={`text-[10px] sm:text-xs font-bold mt-1 px-2.5 py-0.5 rounded-full ${
+                    selectedSubjectTab === 'video'
+                      ? 'bg-white/25 text-white'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
+                  }`}
+                >
+                  {subjectVideos.length} فيديو
+                </span>
+              </button>
+
+              {/* 3rd (Left): بنك الأسئلة */}
+              <button
+                type="button"
+                onClick={() => setSelectedSubjectTab('questions')}
+                className={`flex flex-col items-center justify-center p-3 sm:p-5 rounded-2xl border transition-all text-center min-h-[96px] sm:min-h-[116px] group active:scale-95 ${
+                  selectedSubjectTab === 'questions'
+                    ? 'bg-purple-600 text-white border-purple-400 shadow-xl shadow-purple-600/30 ring-2 ring-purple-400'
+                    : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-purple-400/50 hover:bg-purple-600/[0.03]'
+                }`}
+              >
+                <div
+                  className={`p-2 rounded-xl mb-1.5 transition-transform group-hover:scale-110 ${
+                    selectedSubjectTab === 'questions' ? 'bg-white/20' : 'bg-purple-500/10'
+                  }`}
+                >
+                  <Award
+                    className={`w-5 h-5 sm:w-6 sm:h-6 ${
+                      selectedSubjectTab === 'questions' ? 'text-white' : 'text-purple-500'
+                    }`}
+                  />
+                </div>
+                <span className="text-xs sm:text-sm font-black tracking-tight line-clamp-1">
+                  بنك الأسئلة
+                </span>
+                <span
+                  className={`text-[10px] sm:text-xs font-bold mt-1 px-2.5 py-0.5 rounded-full ${
+                    selectedSubjectTab === 'questions'
+                      ? 'bg-white/25 text-white'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
+                  }`}
+                >
+                  {subjectQuizzes.length} اختبار
+                </span>
+              </button>
+            </div>
+
+            {/* TAB CONTENT 1: المحاضرات والـ PDF */}
+            {selectedSubjectTab === 'pdf' && (
+              <div className="space-y-4">
+                {/* PDF Actions Bar */}
+                <div className="flex items-center justify-between gap-3 p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs">
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-slate-700 dark:text-slate-300">
+                      محاضرات وملخصات الـ PDF المتاحة ({subjectPdfs.length})
+                    </span>
+                  </div>
+
+                  {subjectPdfs.length > 0 && (
+                    <button
+                      onClick={() => {
+                        setMultiSelectMode(!multiSelectMode);
+                        setSelectedForDownload([]);
+                      }}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold text-xs transition-all ${
+                        multiSelectMode
+                          ? 'bg-teal-600 text-white shadow-sm'
+                          : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:text-amber-500'
+                      }`}
+                    >
+                      <CheckSquare className="w-3.5 h-3.5" />
+                      <span>{multiSelectMode ? 'إلغاء التحديد' : 'تحديد للتنزيل دفعة واحدة'}</span>
+                    </button>
+                  )}
+                </div>
+
+                {/* Floating Multi-Download Action Bar */}
+                {multiSelectMode && (
+                  <div className="sticky top-20 z-30 p-3 rounded-2xl bg-teal-900/90 text-white border border-teal-400 shadow-xl flex items-center justify-between gap-3 text-xs backdrop-blur-md">
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={handleSelectAllDownloads}
+                        className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/20 hover:bg-white/30 font-bold"
+                      >
+                        <span>تحديد الكل</span>
+                      </button>
+                      <span>تم تحديد: {selectedForDownload.length} ملف</span>
+                    </div>
+
+                    <button
+                      onClick={handleBulkDownload}
+                      disabled={selectedForDownload.length === 0 || isDownloading}
+                      className="px-4 py-1.5 rounded-xl bg-white text-teal-950 font-black flex items-center gap-1.5 hover:bg-teal-100 transition-colors disabled:opacity-50"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>{isDownloading ? 'جارٍ التنزيل...' : 'تنزيل المحدد دفعة واحدة'}</span>
+                    </button>
+                  </div>
+                )}
+
+                {subjectPdfs.length === 0 ? (
+                  <EmptyState
+                    icon="file"
+                    title="لا توجد محاضرات PDF مضافة في هذه المادة حالياً"
+                    description="سيتم إضافة ملفات المحاضرات والملخصات من قبل إدارة المنصة قريباً."
+                  />
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                    {subjectPdfs.map((material) => (
+                      <div key={material.id} className="relative">
+                        {multiSelectMode && (
                           <button
-                            onClick={() => toggleSelectForDownload(item.id)}
-                            className="absolute top-3 right-3 z-20 w-8 h-8 rounded-xl bg-slate-950/80 border border-teal-400 text-white flex items-center justify-center shadow-lg"
+                            type="button"
+                            onClick={() => toggleSelectForDownload(material.id)}
+                            className={`absolute top-3 right-3 z-20 p-2 rounded-xl backdrop-blur-md transition-all ${
+                              selectedForDownload.includes(material.id)
+                                ? 'bg-teal-600 text-white shadow-lg'
+                                : 'bg-slate-950/70 text-slate-300 hover:text-white'
+                            }`}
                           >
-                            {isSelected ? (
-                              <CheckSquare className="w-5 h-5 text-teal-400 fill-teal-400/20" />
-                            ) : (
-                              <Square className="w-5 h-5 text-slate-400" />
-                            )}
+                            <CheckSquare className="w-4 h-4" />
                           </button>
                         )}
 
                         <MaterialCard
-                          material={item}
-                          onOpenVideo={setActiveVideo}
-                          onOpenPdf={setActivePdf}
+                          material={material}
+                          onOpenPdf={(mat) => setActivePdf(mat)}
+                          onOpenVideo={(mat) => setActiveVideo(mat)}
                         />
                       </div>
-                    );
-                  })}
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* TAB CONTENT 2: شرح الفيديوهات */}
+            {selectedSubjectTab === 'video' && (
+              <div className="space-y-4">
+                <div className="p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs font-bold text-slate-700 dark:text-slate-300">
+                  شروحات الفيديو المباشرة للمادة ({subjectVideos.length})
                 </div>
-              ) : activeTab !== 'all' || filteredBundles.length === 0 ? (
-                <EmptyState
-                  title={
-                    cramMode
-                      ? 'لا توجد مراجعات مخصصة لليلة الامتحان حالياً'
-                      : searchQuery.trim()
-                      ? 'لا توجد نتائج مطابقة للبحث'
-                      : `لا توجد محاضرات مضافة في ${gradeInfo.name} حالياً`
-                  }
-                  description={
-                    cramMode
-                      ? 'قم بإلغاء وضع ليلة الامتحان لمشاهدة جميع المحاضرات العادية.'
-                      : 'سيقوم مشرفو المنصة برفع المحاضرات والمذكرات المعتمدة هنا فور صدورها.'
-                  }
-                  icon="file"
-                />
-              ) : null}
-            </div>
+
+                {subjectVideos.length === 0 ? (
+                  <EmptyState
+                    icon="file"
+                    title="لا توجد شروحات فيديو مضافة في هذه المادة حالياً"
+                    description="سيتم رفع الشروحات المرئية للمادة قريباً."
+                  />
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                    {subjectVideos.map((material) => (
+                      <MaterialCard
+                        key={material.id}
+                        material={material}
+                        onOpenVideo={(mat) => setActiveVideo(mat)}
+                        onOpenPdf={(mat) => setActivePdf(mat)}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* TAB CONTENT 3: بنك الأسئلة */}
+            {selectedSubjectTab === 'questions' && (
+              <div className="space-y-5">
+                {/* Random Practice Quiz Feature for this Subject */}
+                <div className="p-5 sm:p-6 rounded-3xl bg-gradient-to-r from-purple-900/60 via-indigo-950 to-slate-900 border border-purple-500/30 text-white flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-xl">
+                  <div>
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <span className="px-2.5 py-0.5 rounded-full bg-purple-500 text-white font-black text-[11px] shadow-sm">
+                        بنك الأسئلة الذكي
+                      </span>
+                      <h3 className="text-base sm:text-lg font-black text-white">
+                        اختبار تدريبي عشوائي ({selectedCover.subject_name})
+                      </h3>
+                    </div>
+                    <p className="text-xs text-slate-300 max-w-xl leading-relaxed">
+                      اختبر مستواك الآن بسحب 10 أسئلة عشوائية من أسئلة هذه المادة لتثبيت القواعد والتحضير للامتحانات.
+                    </p>
+                  </div>
+
+                  <button
+                    onClick={handleStartRandomPracticeQuiz}
+                    disabled={isGeneratingPracticeQuiz || subjectQuizzes.length === 0}
+                    className="px-5 py-3 rounded-2xl bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-600 hover:to-yellow-600 text-slate-950 font-black text-xs sm:text-sm shadow-lg shadow-amber-500/25 flex items-center gap-2 shrink-0 disabled:opacity-50 transition-all active:scale-95"
+                  >
+                    <Sparkles className="w-4 h-4 text-slate-950" />
+                    <span>{isGeneratingPracticeQuiz ? 'جارٍ التوليد...' : 'بدء اختبار عشوائي 🎲'}</span>
+                  </button>
+                </div>
+
+                {/* Quizzes Grid */}
+                {subjectQuizzes.length === 0 ? (
+                  <EmptyState
+                    icon="book"
+                    title="لا توجد اختبارات أو بنوك أسئلة مضافة في هذه المادة حالياً"
+                    description="سيتم إضافة بنوك الأسئلة والاختبارات التفاعلية قريباً."
+                  />
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                    {subjectQuizzes.map((quiz) => (
+                      <div
+                        key={quiz.id}
+                        className="rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 shadow-sm hover:shadow-xl hover:border-purple-500/40 transition-all flex flex-col justify-between space-y-4 group"
+                      >
+                        <div>
+                          <div className="flex items-center justify-between gap-2 mb-3">
+                            <span className="p-2 rounded-xl bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20">
+                              <Award className="w-4 h-4" />
+                            </span>
+
+                            <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                              {quiz.duration_minutes} دقيقة
+                            </span>
+                          </div>
+
+                          <h4 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white group-hover:text-purple-600 dark:group-hover:text-purple-400 transition-colors">
+                            {quiz.title}
+                          </h4>
+
+                          {quiz.description && (
+                            <p className="text-xs text-slate-600 dark:text-slate-400 mt-1.5 line-clamp-2 leading-relaxed">
+                              {quiz.description}
+                            </p>
+                          )}
+                        </div>
+
+                        <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3">
+                          <span className="text-xs text-slate-500 font-semibold">
+                            {quiz.question_count || quiz.questions?.length || 0} سؤال
+                          </span>
+
+                          <button
+                            onClick={() => setActiveQuiz(quiz)}
+                            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs shadow-md shadow-purple-600/20 transition-all active:scale-95"
+                          >
+                            <span>بدء الاختبار</span>
+                            <ChevronLeft className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
       </main>
 
-      {/* Floating Widgets (Pomodoro & Scratchpad) */}
-      <FloatingWidgets />
-
       {/* Video Modal */}
-      <VideoModal
-        material={activeVideo}
-        onClose={() => setActiveVideo(null)}
-      />
+      {activeVideo && (
+        <VideoModal
+          material={activeVideo}
+          onClose={() => setActiveVideo(null)}
+        />
+      )}
 
-      {/* PDF Modal */}
-      <PdfModal
-        material={activePdf}
-        onClose={() => setActivePdf(null)}
-      />
+      {/* PDF Viewer Modal */}
+      {activePdf && (
+        <PdfModal
+          material={activePdf}
+          onClose={() => setActivePdf(null)}
+        />
+      )}
 
-      {/* Lecture Bundle Modal (Part 1.2) */}
-      <LectureBundleModal
-        bundle={activeBundle}
-        onClose={() => setActiveBundle(null)}
-        onOpenQuiz={(quizId) => {
-          const q = quizzes.find((x) => x.id === quizId);
-          if (q) setActiveQuiz(q);
-        }}
-      />
+      {/* Quiz Player Modal */}
+      {activeQuiz && (
+        <QuizPlayerModal
+          quiz={activeQuiz}
+          onClose={() => setActiveQuiz(null)}
+          onSubmissionSuccess={() => {
+            loadGradeData();
+          }}
+        />
+      )}
 
-      {/* Quiz Modal */}
-      <QuizPlayerModal
-        quiz={activeQuiz}
-        onClose={() => setActiveQuiz(null)}
-        onSubmissionSuccess={() => loadGradeData(false)}
-      />
-
-      {/* Interactive Peeking Theme Character Widget */}
+      {/* Interactive Peeking Character Widget */}
       <ThemeCharacterWidget />
 
+      {/* Floating Action Widgets */}
+      <FloatingWidgets settings={settings} />
+
+      {/* Footer */}
       <Footer />
     </div>
   );

@@ -20,7 +20,7 @@ import {
 import { AdminLogin } from '@/components/admin/AdminLogin';
 import { AdminHeader } from '@/components/admin/AdminHeader';
 import { BulkUploader } from '@/components/admin/BulkUploader';
-import { LectureBundleManager } from '@/components/admin/LectureBundleManager';
+import { SubjectCoversManager } from '@/components/admin/SubjectCoversManager';
 import { FrenchTermsManager } from '@/components/admin/FrenchTermsManager';
 import { MaterialsTable } from '@/components/admin/MaterialsTable';
 import { SubjectsManager } from '@/components/admin/SubjectsManager';
@@ -35,6 +35,7 @@ import { Material, Subject, UrgentNewsItem, ExamCountdownSettings } from '@/type
 
 type AdminTab =
   | 'upload'
+  | 'covers'
   | 'bundles'
   | 'materials'
   | 'quizzes'
@@ -59,6 +60,7 @@ export default function AdminDashboardClient() {
       saved &&
       [
         'upload',
+        'covers',
         'bundles',
         'materials',
         'quizzes',
@@ -236,12 +238,12 @@ export default function AdminDashboardClient() {
 
   const tabs = [
     { id: 'upload', label: 'رفع الملفات السريع', icon: <UploadCloud className="w-4 h-4" /> },
-    { id: 'bundles', label: 'باقات المحاضرات (غلاف + 4 تبويبات)', icon: <FolderArchive className="w-4 h-4" /> },
+    { id: 'covers', label: 'إدارة أغلفة المواد ومعاينة الفيديو', icon: <FolderArchive className="w-4 h-4 text-amber-400" /> },
     { id: 'materials', label: 'إدارة المحاضرات (تحديد وحذف)', count: totalMaterials, icon: <Layers className="w-4 h-4" /> },
     { id: 'quizzes', label: 'الاختبارات وبناء الأسئلة والتكريم', icon: <Award className="w-4 h-4" /> },
     { id: 'french', label: 'القاموس الفرنسي الصوتي', icon: <BookA className="w-4 h-4" /> },
     { id: 'themes', label: 'الثيمات والشخصيات التفاعلية', icon: <Sparkles className="w-4 h-4 text-purple-400" /> },
-    { id: 'cms', label: 'المظهر والـ CMS والواتساب', icon: <Settings className="w-4 h-4" /> },
+    { id: 'cms', label: 'الـ CMS والواتساب والتواصل', icon: <Settings className="w-4 h-4" /> },
     { id: 'requests', label: 'طلبات الطلاب', icon: <MessageSquare className="w-4 h-4" /> },
     { id: 'subjects', label: 'المواد الدراسية', count: totalSubjects, icon: <BookOpen className="w-4 h-4" /> },
     { id: 'news', label: 'الأخبار العاجلة', count: activeNewsCount, icon: <BellRing className="w-4 h-4" /> },
@@ -348,8 +350,8 @@ export default function AdminDashboardClient() {
             />
           )}
 
-          {activeTab === 'bundles' && (
-            <LectureBundleManager
+          {activeTab === 'covers' && (
+            <SubjectCoversManager
               subjects={subjects}
               onRefresh={() => loadAdminData(false)}
             />

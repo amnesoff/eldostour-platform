@@ -103,24 +103,12 @@ export function MaterialCard({
       transition={{ duration: 0.25 }}
       className="relative flex flex-col rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-sm hover:shadow-xl hover:border-amber-500/40 dark:hover:border-amber-400/30 transition-all overflow-hidden group"
     >
-      {/* 72-Hour "NEW / جديد" Glowing Badge (Feature 5 & 23) */}
-      {isNew ? (
-        <div className="absolute top-3 left-3 z-10 flex items-center gap-1 px-2.5 py-1 rounded-full bg-gradient-to-r from-amber-500 to-yellow-500 text-slate-950 font-black text-[11px] shadow-lg shadow-amber-500/30 border border-yellow-300">
-          <Sparkles className="w-3 h-3 text-slate-950 animate-spin" />
-          <span>جديد</span>
-        </div>
-      ) : isTrending ? (
-        <div className="absolute top-3 left-3 z-10 flex items-center gap-1 px-2.5 py-1 rounded-full bg-gradient-to-r from-orange-500 to-amber-500 text-slate-950 font-black text-[11px] shadow-lg shadow-orange-500/30 border border-orange-300">
-          <Flame className="w-3 h-3 fill-current text-slate-950" />
-          <span>الأكثر طلباً 🔥</span>
-        </div>
-      ) : null}
-
       {/* Top Banner & Subject Tag */}
       <div className="p-4 sm:p-5 pb-3 flex-1 flex flex-col">
+        {/* Header Metadata Row: File Type + Status Badge + Subject Name */}
         <div className="flex items-center justify-between gap-2 mb-3">
-          {/* File Type Pill */}
-          <div className="flex items-center gap-1.5">
+          {/* File Type Pill & Status Badge */}
+          <div className="flex items-center gap-1.5 flex-wrap">
             <span
               className={`p-1.5 rounded-lg shrink-0 ${
                 isPdf
@@ -133,11 +121,24 @@ export function MaterialCard({
             <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
               {isPdf ? 'ملف PDF' : 'فيديو مباشر'}
             </span>
+
+            {/* 72-Hour "NEW / جديد" or "Trending" Badge: Placed cleanly in document flow, NEVER overlaps title or subject */}
+            {isNew ? (
+              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-gradient-to-r from-amber-500 to-yellow-500 text-slate-950 font-black text-[10px] shadow-sm shadow-amber-500/20 border border-yellow-300">
+                <Sparkles className="w-3 h-3 text-slate-950 animate-spin" />
+                <span>جديد</span>
+              </span>
+            ) : isTrending ? (
+              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-gradient-to-r from-orange-500 to-amber-500 text-slate-950 font-black text-[10px] shadow-sm shadow-orange-500/20 border border-orange-300">
+                <Flame className="w-3 h-3 fill-current text-slate-950" />
+                <span>الأكثر طلباً 🔥</span>
+              </span>
+            ) : null}
           </div>
 
           {/* Subject Badge */}
           {material.subjects?.name && (
-            <span className="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-amber-300 border border-slate-200 dark:border-slate-700/60 max-w-[150px] truncate">
+            <span className="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-amber-300 border border-slate-200 dark:border-slate-700/60 max-w-[140px] truncate shrink-0">
               {material.subjects.name}
             </span>
           )}

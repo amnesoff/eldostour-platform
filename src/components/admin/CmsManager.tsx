@@ -7,7 +7,6 @@ import {
   CheckCircle2,
   AlertCircle,
   Loader2,
-  Sparkles,
   MessageCircle,
   LayoutTemplate,
   Eye,
@@ -15,7 +14,7 @@ import {
   ArrowUp,
   ArrowDown,
 } from 'lucide-react';
-import { SiteSettings, SiteSection, OccasionTheme } from '@/types';
+import { SiteSettings, SiteSection } from '@/types';
 import { DEFAULT_SITE_SETTINGS, DEFAULT_SECTIONS } from '@/lib/constants';
 import { supabase } from '@/lib/supabase';
 
@@ -127,53 +126,17 @@ export function CmsManager({ onRefresh }: CmsManagerProps) {
           </div>
           <div>
             <h3 className="text-lg font-bold text-white">
-              نظام إدارة المحتوى الشامل (Content & Social CMS)
+              نظام إدارة المحتوى والواتساب والتواصل (Content & Social CMS)
             </h3>
             <p className="text-xs text-slate-400">
-              التحكم في نصوص الواجهة، ثيمات المناسبات، ويدجت واتساب، وروابط التواصل
+              التحكم في نصوص الواجهة، ويدجت واتساب، وروابط التواصل، وترتيب الأقسام
             </p>
           </div>
         </div>
       </div>
 
       <form onSubmit={handleSave} className="space-y-8">
-        {/* 1. Occasion Theme Switcher */}
-        <div className="p-5 rounded-2xl bg-slate-950/70 border border-slate-800">
-          <h4 className="text-sm font-bold text-amber-400 mb-3 flex items-center gap-2">
-            <Sparkles className="w-4 h-4" />
-            <span>ثيم المناسبات المتحرك (يظهر لجميع الطلاب فوراً):</span>
-          </h4>
-
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            {[
-              { id: 'default', label: 'الافتراضي (طبيعي)', desc: 'المظهر الأكاديمي القياسي' },
-              { id: 'ramadan', label: '🌙 رمضان كريم', desc: 'فوانيس متأرجحة وزينة رمضانية' },
-              { id: 'new_year', label: '❄️ رأس السنة', desc: 'تساقط ثلوج وتهنئة العام' },
-              { id: 'exams', label: '🔥 موسم الامتحانات', desc: 'تركيز عالي وألوان ذهبية' },
-            ].map((t) => (
-              <button
-                type="button"
-                key={t.id}
-                onClick={() =>
-                  setSettings((prev) => ({
-                    ...prev,
-                    active_occasion_theme: t.id as OccasionTheme,
-                  }))
-                }
-                className={`p-3.5 rounded-2xl border text-right transition-all ${
-                  settings.active_occasion_theme === t.id
-                    ? 'bg-amber-500 text-slate-950 font-bold border-amber-400 shadow-md shadow-amber-500/20'
-                    : 'bg-slate-900 border-slate-800 text-slate-300 hover:border-slate-700'
-                }`}
-              >
-                <div className="text-xs font-bold mb-1">{t.label}</div>
-                <div className="text-[10px] opacity-80">{t.desc}</div>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* 2. Text Content Settings */}
+        {/* 1. Text Content Settings */}
         <div className="p-5 rounded-2xl bg-slate-950/70 border border-slate-800 space-y-4">
           <h4 className="text-sm font-bold text-white mb-2">النصوص وعناوين الواجهة:</h4>
 
@@ -312,6 +275,21 @@ export function CmsManager({ onRefresh }: CmsManagerProps) {
                 onChange={(e) =>
                   setSettings((prev) => ({ ...prev, social_youtube: e.target.value }))
                 }
+                className="w-full h-11 px-3 rounded-xl bg-slate-900 border border-slate-700 text-xs sm:text-sm text-white outline-none"
+              />
+            </div>
+
+            <div className="sm:col-span-2">
+              <label className="block text-xs font-semibold text-slate-300 mb-1">
+                حساب تيك توك:
+              </label>
+              <input
+                type="text"
+                value={settings.social_tiktok || ''}
+                onChange={(e) =>
+                  setSettings((prev) => ({ ...prev, social_tiktok: e.target.value }))
+                }
+                placeholder="https://tiktok.com/@..."
                 className="w-full h-11 px-3 rounded-xl bg-slate-900 border border-slate-700 text-xs sm:text-sm text-white outline-none"
               />
             </div>

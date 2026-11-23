@@ -56,6 +56,7 @@ export interface Material {
   storage_path: string;
   year: AcademicYearId;
   subject_id: string;
+  cover_id?: string | null;
   file_size?: number;
   likes_count: number;
   is_cram?: boolean; // Night-before-exam mode flag
@@ -139,6 +140,7 @@ export interface Quiz {
   description?: string;
   year: AcademicYearId;
   subject_id: string;
+  cover_id?: string | null;
   duration_minutes: number;
   is_active: boolean;
   created_at: string;
@@ -147,6 +149,28 @@ export interface Quiz {
   } | null;
   questions?: QuizQuestion[];
   question_count?: number;
+}
+
+// Subject Cover & YouTube-Style Preview Model
+export interface SubjectCover {
+  id: string;
+  subject_name: string;
+  year: AcademicYearId;
+  subject_id?: string | null;
+  cover_image_url: string;
+  cover_image_storage_path?: string;
+  preview_video_url?: string;
+  preview_video_storage_path?: string;
+  professor_name?: string;
+  description?: string;
+  order_index?: number;
+  created_at: string;
+  materials_count?: number;
+  videos_count?: number;
+  quizzes_count?: number;
+  subjects?: {
+    name: string;
+  } | null;
 }
 
 export interface QuizSubmission {
