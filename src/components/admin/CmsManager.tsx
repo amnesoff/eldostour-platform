@@ -20,7 +20,7 @@ import { SiteSettings, SiteSection, AcademicYearId } from '@/types';
 import { DEFAULT_SITE_SETTINGS, DEFAULT_SECTIONS, ACADEMIC_YEARS } from '@/lib/constants';
 import { compressImageFile } from '@/lib/authUtils';
 import { supabase } from '@/lib/supabase';
-import { adminDbMutate } from '@/lib/apiClient';
+import { adminDbMutate, adminGetSiteSettings } from '@/lib/apiClient';
 
 interface CmsManagerProps {
   onRefresh?: () => void;
@@ -33,27 +33,18 @@ export function CmsManager({ onRefresh }: CmsManagerProps) {
   const [success, setSuccess] = useState('');
   const [error, setError] = useState('');
 
-  // Fetch settings from Supabase
+  // Fetch settings via /api/admin/db (server-side service role)
   useEffect(() => {
     const loadCmsData = async () => {
       try {
-        const { data: sData } = await supabase
-          .from('site_settings')
-          .select('value')
-          .eq('key', 'general')
-          .single();
-
-        if (sData && sData.value) {
-          setSettings((prev) => ({ ...prev, ...(sData.value as Partial<SiteSettings>) }));
-        }
-
-        const { data: secData } = await supabase
-          .from('site_sections')
-          .select('*')
-          .order('order_index', { ascending: true });
-
-        if (secData && secData.length > 0) {
-          setSections(secData as SiteSection[]);
+        const res = await adminGetSiteSettings();
+        if (res?.success) {
+          if (res.general) {
+            setSettings((prev) => ({ ...prev, ...(res.general as Partial<SiteSettings>) }));
+          }
+          if (Array.isArray(res.sections) && res.sections.length > 0) {
+            setSections(res.sections as SiteSection[]);
+          }
         }
       } catch {
         // Fallback to defaults

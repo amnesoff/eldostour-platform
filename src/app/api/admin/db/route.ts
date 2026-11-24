@@ -809,7 +809,108 @@ export async function POST(req: NextRequest) {
     }
 
     // -------------------------------------------------------------
-    // 10. GENERIC SECURE MUTATIONS FOR ADMIN CONTENT TABLES
+    // 10. SITE SETTINGS & THEME MANAGEMENT (Server-Side Service Role)
+    // -------------------------------------------------------------
+    if (action === 'get_site_settings') {
+      if (!admin.is_super_admin && !admin.permissions?.can_manage_content) {
+        return NextResponse.json({ success: false, error: 'غير مصرح بإدارة إعدادات المنصة' }, { status: 403 });
+      }
+
+      const [generalRes, charRes, sectionsRes] = await Promise.all([
+        supabaseAdmin.from('site_settings').select('value').eq('key', 'general').maybeSingle(),
+        supabaseAdmin.from('site_settings').select('value').eq('key', 'character_widget').maybeSingle(),
+        supabaseAdmin.from('site_sections').select('*').order('order_index', { ascending: true }),
+      ]);
+
+      if (generalRes.error) {
+        return NextResponse.json({ success: false, error: generalRes.error.message }, { status: 500 });
+      }
+
+      return NextResponse.json({
+        success: true,
+        general: generalRes.data?.value || null,
+        character_widget: charRes.data?.value || null,
+        sections: sectionsRes.data || [],
+      });
+    }
+
+    if (action === 'update_theme_settings') {
+      if (!admin.is_super_admin && !admin.permissions?.can_manage_content) {
+        return NextResponse.json({ success: false, error: 'غير مصرح بتعديل الثيمات' }, { status: 403 });
+      }
+
+      const { active_occasion_theme, character_widget, general } = body;
+      let updatedGeneral: any = null;
+      let updatedCharWidget: any = null;
+
+      if (active_occasion_theme !== undefined || general !== undefined) {
+        const { data: currentRow, error: fetchErr } = await supabaseAdmin
+          .from('site_settings')
+          .select('value')
+          .eq('key', 'general')
+          .maybeSingle();
+
+        if (fetchErr) {
+          return NextResponse.json({ success: false, error: fetchErr.message }, { status: 500 });
+        }
+
+        const mergedGeneral = {
+          ...(currentRow?.value || {}),
+          ...(general && typeof general === 'object' ? general : {}),
+          ...(active_occasion_theme !== undefined ? { active_occasion_theme } : {}),
+        };
+
+        const { data: upsertedGeneral, error: upsertErr } = await supabaseAdmin
+          .from('site_settings')
+          .upsert(
+            {
+              key: 'general',
+              value: mergedGeneral,
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: 'key' }
+          )
+          .select('value')
+          .maybeSingle();
+
+        if (upsertErr) {
+          return NextResponse.json({ success: false, error: upsertErr.message }, { status: 500 });
+        }
+
+        updatedGeneral = upsertedGeneral?.value || mergedGeneral;
+      }
+
+      if (character_widget !== undefined) {
+        const { data: upsertedChar, error: charErr } = await supabaseAdmin
+          .from('site_settings')
+          .upsert(
+            {
+              key: 'character_widget',
+              value: character_widget,
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: 'key' }
+          )
+          .select('value')
+          .maybeSingle();
+
+        if (charErr) {
+          return NextResponse.json({ success: false, error: charErr.message }, { status: 500 });
+        }
+
+        updatedCharWidget = upsertedChar?.value || character_widget;
+      }
+
+      return NextResponse.json({
+        success: true,
+        general: updatedGeneral,
+        active_occasion_theme: updatedGeneral?.active_occasion_theme,
+        character_widget: updatedCharWidget,
+      });
+    }
+
+    // -------------------------------------------------------------
+    // 11. GENERIC SECURE MUTATIONS FOR ADMIN CONTENT TABLES
     // -------------------------------------------------------------
     if (action === 'mutate') {
       const { table, mutation, data, id, ids, filter } = body;
@@ -861,9 +962,10 @@ export async function POST(req: NextRequest) {
       }
 
       if (mutation === 'upsert') {
+        const upsertOptions = table === 'site_settings' ? { onConflict: 'key' } : undefined;
         const { data: upserted, error } = await supabaseAdmin
           .from(table)
-          .upsert(data)
+          .upsert(data, upsertOptions)
           .select();
 
         if (error) return NextResponse.json({ success: false, error: error.message }, { status: 500 });

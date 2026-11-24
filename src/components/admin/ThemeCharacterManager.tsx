@@ -15,8 +15,8 @@ import {
   ToggleLeft,
   ToggleRight,
 } from 'lucide-react';
-import { supabase, uploadCustomCharacter } from '@/lib/supabase';
-import { adminDbMutate } from '@/lib/apiClient';
+import { uploadCustomCharacter } from '@/lib/supabase';
+import { adminGetSiteSettings, adminUpdateThemeSettings } from '@/lib/apiClient';
 import { CharacterWidgetSettings, OccasionTheme, CharacterPresetId } from '@/types';
 import {
   CHARACTER_PRESETS,
@@ -42,29 +42,17 @@ export function ThemeCharacterManager({ onSettingsUpdated }: ThemeCharacterManag
   const [successMsg, setSuccessMsg] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
 
-  // Fetch current settings from Supabase
+  // Fetch current settings via /api/admin/db (server-side service role)
   const loadSettings = async () => {
     try {
-      // 1. Fetch general settings (for theme)
-      const { data: generalData } = await supabase
-        .from('site_settings')
-        .select('value')
-        .eq('key', 'general')
-        .single();
-
-      if (generalData?.value?.active_occasion_theme) {
-        setActiveTheme(generalData.value.active_occasion_theme);
-      }
-
-      // 2. Fetch character widget settings
-      const { data: charData } = await supabase
-        .from('site_settings')
-        .select('value')
-        .eq('key', 'character_widget')
-        .single();
-
-      if (charData?.value) {
-        setCharSettings((prev) => ({ ...prev, ...(charData.value as CharacterWidgetSettings) }));
+      const res = await adminGetSiteSettings();
+      if (res?.success) {
+        if (res.general?.active_occasion_theme) {
+          setActiveTheme(res.general.active_occasion_theme);
+        }
+        if (res.character_widget) {
+          setCharSettings((prev) => ({ ...prev, ...(res.character_widget as CharacterWidgetSettings) }));
+        }
       }
     } catch (err) {
       console.warn('Could not load theme & character settings:', err);
@@ -75,32 +63,18 @@ export function ThemeCharacterManager({ onSettingsUpdated }: ThemeCharacterManag
     loadSettings();
   }, []);
 
-  // Update Active Seasonal Theme
+  // Update Active Seasonal Theme via /api/admin/db
   const handleSelectTheme = async (themeKey: OccasionTheme) => {
     setIsSavingTheme(true);
     setErrorMsg('');
     try {
-      // Fetch current general value to merge
-      const { data: current } = await supabase
-        .from('site_settings')
-        .select('value')
-        .eq('key', 'general')
-        .single();
-
-      const updatedGeneral = {
-        ...(current?.value || {}),
+      const res = await adminUpdateThemeSettings({
         active_occasion_theme: themeKey,
-      };
-
-      const res = await adminDbMutate({
-        table: 'site_settings',
-        mutation: 'upsert',
-        data: { key: 'general', value: updatedGeneral },
       });
 
-      if (!res.success) throw new Error(res.error);
+      if (!res?.success) throw new Error(res?.error || 'فشل تفعيل الثيم');
 
-      setActiveTheme(themeKey);
+      setActiveTheme(res.active_occasion_theme || themeKey);
       setSuccessMsg(`تم تفعيل الثيم (${themeKey}) بنجاح وسيتزامن فوراً لدى جميع الطلاب!`);
       setTimeout(() => setSuccessMsg(''), 3500);
       onSettingsUpdated?.();
@@ -111,20 +85,18 @@ export function ThemeCharacterManager({ onSettingsUpdated }: ThemeCharacterManag
     }
   };
 
-  // Save Character Widget Settings
+  // Save Character Widget Settings via /api/admin/db
   const saveCharacterSettings = async (newSettings: CharacterWidgetSettings) => {
     setIsSavingWidget(true);
     setErrorMsg('');
     try {
-      const res = await adminDbMutate({
-        table: 'site_settings',
-        mutation: 'upsert',
-        data: { key: 'character_widget', value: newSettings },
+      const res = await adminUpdateThemeSettings({
+        character_widget: newSettings,
       });
 
-      if (!res.success) throw new Error(res.error);
+      if (!res?.success) throw new Error(res?.error || 'فشل حفظ إعدادات الشخصية');
 
-      setCharSettings(newSettings);
+      setCharSettings(res.character_widget || newSettings);
       setSuccessMsg('تم حفظ وتحديث إعدادات الشخصية التفاعلية بنجاح!');
       setTimeout(() => setSuccessMsg(''), 3000);
       onSettingsUpdated?.();

@@ -92,6 +92,24 @@ export async function adminDbMutate(params: {
   });
 }
 
+export async function adminGetSiteSettings() {
+  return adminFetch('/api/admin/db', {
+    method: 'POST',
+    body: JSON.stringify({ action: 'get_site_settings' }),
+  });
+}
+
+export async function adminUpdateThemeSettings(payload: {
+  active_occasion_theme?: string;
+  character_widget?: any;
+  general?: Record<string, any>;
+}) {
+  return adminFetch('/api/admin/db', {
+    method: 'POST',
+    body: JSON.stringify({ action: 'update_theme_settings', ...payload }),
+  });
+}
+
 export async function adminGetSecurityData() {
   return adminFetch('/api/admin/db', {
     method: 'POST',
