@@ -20,7 +20,7 @@ export default async function SecretPortalPage({ params, searchParams }: PortalP
   const { data: secRow } = await supabaseAdmin
     .from('admin_security')
     .select('super_admin_slug, super_admin_key, staff_portal_slug, staff_portal_key')
-    .eq('id', 'primary')
+    .limit(1)
     .maybeSingle();
 
   const superSlug = secRow?.super_admin_slug || 'command-mazen';

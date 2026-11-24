@@ -207,7 +207,7 @@ export function SecurityCenterManager({ onRefresh }: SecurityCenterManagerProps)
       prev
         ? { ...prev, manual_approval_enabled: nextVal, require_student_approval: nextVal }
         : ({
-            id: 'primary',
+            id: 1,
             admin_username: 'Dr. Mazen 2006',
             vault_enabled: true,
             session_version: 1,
@@ -248,7 +248,7 @@ export function SecurityCenterManager({ onRefresh }: SecurityCenterManagerProps)
       prev
         ? { ...prev, registration_paused: nextVal }
         : ({
-            id: 'primary',
+            id: 1,
             admin_username: 'Dr. Mazen 2006',
             vault_enabled: true,
             session_version: 1,
@@ -295,7 +295,7 @@ export function SecurityCenterManager({ onRefresh }: SecurityCenterManagerProps)
             maintenance_mode: nextVal,
           }
         : ({
-            id: 'primary',
+            id: 1,
             admin_username: 'Dr. Mazen 2006',
             vault_enabled: true,
             session_version: 1,

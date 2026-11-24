@@ -11,6 +11,11 @@ import {
   UNIFIED_RESET_PASSWORD,
 } from '@/lib/server/security';
 import { AdminSession } from '@/types';
+import {
+  getAdminSecurityRow,
+  updateAdminSecurityRow,
+  syncEmergencySwitchesToSiteSettings,
+} from '@/lib/server/adminSecurityDb';
 
 function hashSha256(str: string): string {
   return crypto.createHash('sha256').update(str).digest('hex');
@@ -69,12 +74,7 @@ export async function authenticateAdmin(req: NextRequest): Promise<AdminSession 
   // Retrieve primary admin record to verify session version & super admin username
   let secRow: any = null;
   try {
-    const { data } = await supabaseAdmin
-      .from('admin_security')
-      .select('session_version, admin_username')
-      .eq('id', 'primary')
-      .maybeSingle();
-    secRow = data;
+    secRow = await getAdminSecurityRow();
   } catch (err) {
     console.warn('Could not read admin_security during admin auth:', err);
   }
@@ -158,35 +158,35 @@ export async function POST(req: NextRequest) {
     // 1. GET SECURITY CONFIG (Safe for display in SecurityCenter)
     // -------------------------------------------------------------
     if (action === 'get_security_data') {
-      let { data: secRow } = await supabaseAdmin
-        .from('admin_security')
-        .select('*')
-        .eq('id', 'primary')
-        .maybeSingle();
+      let secRow = await getAdminSecurityRow();
 
       // If admin_security row does not exist, check site_settings or upsert defaults
       if (!secRow) {
         const { data: siteSwitches } = await supabaseAdmin
           .from('site_settings')
-          .select('value')
+          .select('value, registration_paused, maintenance_mode, platform_locked, require_student_approval')
           .eq('key', 'emergency_switches')
           .maybeSingle();
 
         const defaultSettings = {
-          id: 'primary',
           admin_username: 'Dr. Mazen 2006',
           vault_enabled: true,
           session_version: 1,
-          manual_approval_enabled: Boolean(siteSwitches?.value?.manual_approval_enabled),
-          registration_paused: Boolean(siteSwitches?.value?.registration_paused),
+          manual_approval_enabled: Boolean(
+            siteSwitches?.value?.manual_approval_enabled ?? siteSwitches?.require_student_approval
+          ),
+          registration_paused: Boolean(
+            siteSwitches?.value?.registration_paused ?? siteSwitches?.registration_paused
+          ),
           platform_lockdown: Boolean(
-            siteSwitches?.value?.platform_locked ||
-              siteSwitches?.value?.platform_lockdown ||
-              siteSwitches?.value?.maintenance_mode
+            siteSwitches?.value?.platform_locked ??
+              siteSwitches?.value?.platform_lockdown ??
+              siteSwitches?.value?.maintenance_mode ??
+              siteSwitches?.platform_locked ??
+              siteSwitches?.maintenance_mode
           ),
           super_admin_slug: 'command-mazen',
           staff_portal_slug: 'staff-portal',
-          whatsapp_approval_number: '201000000000',
           staff_visible_tabs: {
             materials: true,
             quizzes: true,
@@ -199,13 +199,8 @@ export async function POST(req: NextRequest) {
           updated_at: new Date().toISOString(),
         };
 
-        const { data: createdSec } = await supabaseAdmin
-          .from('admin_security')
-          .upsert(defaultSettings)
-          .select()
-          .maybeSingle();
-
-        secRow = createdSec || defaultSettings;
+        const { data: createdSec } = await updateAdminSecurityRow(defaultSettings);
+        secRow = createdSec || ({ id: 1, ...defaultSettings } as any);
       }
 
       const { data: subAdmins } = await supabaseAdmin
@@ -231,7 +226,7 @@ export async function POST(req: NextRequest) {
             require_student_approval: Boolean(secRow.manual_approval_enabled),
             super_admin_slug: secRow.super_admin_slug || 'command-mazen',
             staff_portal_slug: secRow.staff_portal_slug || 'staff-portal',
-            whatsapp_approval_number: secRow.whatsapp_approval_number || '201000000000',
+            whatsapp_approval_number: '201122144007',
             staff_visible_tabs: secRow.staff_visible_tabs,
             registration_paused: Boolean(secRow.registration_paused),
             platform_lockdown: Boolean(secRow.platform_lockdown),
@@ -300,53 +295,37 @@ export async function POST(req: NextRequest) {
       if (body.staff_visible_tabs !== undefined) updates.staff_visible_tabs = body.staff_visible_tabs;
       if (body.session_version !== undefined) updates.session_version = Number(body.session_version);
 
-      // Upsert into admin_security using SUPABASE_SERVICE_ROLE_KEY to guarantee persistence
-      const { data: updatedSec, error: secErr } = await supabaseAdmin
-        .from('admin_security')
-        .upsert({
-          id: 'primary',
-          ...updates,
-        })
-        .select()
-        .single();
+      // Update admin_security by numeric id (or insert id: 1)
+      const { data: updatedSec, error: secErr } = await updateAdminSecurityRow(updates);
 
       if (secErr) {
-        console.error('Error upserting admin_security:', secErr);
-        return NextResponse.json({ success: false, error: secErr.message }, { status: 500 });
+        console.error('Error updating admin_security:', secErr);
+        // Fallback: If admin_security table update fails, don't halt the request if we can sync to site_settings
       }
 
-      // Also upsert into site_settings so the switches persist across page reloads & are visible platform-wide
-      try {
-        await supabaseAdmin.from('site_settings').upsert({
-          key: 'emergency_switches',
-          value: {
-            registration_paused: Boolean(updatedSec?.registration_paused ?? updates.registration_paused),
-            platform_locked: Boolean(updatedSec?.platform_lockdown ?? updates.platform_lockdown),
-            maintenance_mode: Boolean(updatedSec?.platform_lockdown ?? updates.platform_lockdown),
-            platform_lockdown: Boolean(updatedSec?.platform_lockdown ?? updates.platform_lockdown),
-            require_student_approval: Boolean(
-              updatedSec?.manual_approval_enabled ?? updates.manual_approval_enabled
-            ),
-            manual_approval_enabled: Boolean(
-              updatedSec?.manual_approval_enabled ?? updates.manual_approval_enabled
-            ),
-            updated_at: new Date().toISOString(),
-          },
-          updated_at: new Date().toISOString(),
-        });
-      } catch (siteErr) {
-        console.warn('Could not mirror switches to site_settings:', siteErr);
-      }
+      // Save/mirror switches directly into site_settings columns and emergency_switches key
+      const finalRegPaused = Boolean(updatedSec?.registration_paused ?? updates.registration_paused);
+      const finalPlatformLocked = Boolean(updatedSec?.platform_lockdown ?? updates.platform_lockdown);
+      const finalRequireApproval = Boolean(updatedSec?.manual_approval_enabled ?? updates.manual_approval_enabled);
+
+      await syncEmergencySwitchesToSiteSettings({
+        registration_paused: finalRegPaused,
+        platform_locked: finalPlatformLocked,
+        require_student_approval: finalRequireApproval,
+      });
 
       await logAdminAudit(admin.username, 'update_security_settings', 'تم تعديل الإعدادات ومفاتيح الطوارئ الأمنية', ip);
 
       return NextResponse.json({
         success: true,
         settings: {
-          ...stripSensitiveFields(updatedSec),
-          require_student_approval: Boolean(updatedSec?.manual_approval_enabled),
-          platform_locked: Boolean(updatedSec?.platform_lockdown),
-          maintenance_mode: Boolean(updatedSec?.platform_lockdown),
+          ...(updatedSec ? stripSensitiveFields(updatedSec) : {}),
+          registration_paused: finalRegPaused,
+          manual_approval_enabled: finalRequireApproval,
+          require_student_approval: finalRequireApproval,
+          platform_locked: finalPlatformLocked,
+          platform_lockdown: finalPlatformLocked,
+          maintenance_mode: finalPlatformLocked,
         },
       });
     }
@@ -369,7 +348,7 @@ export async function POST(req: NextRequest) {
         updates.pin_hash = hashSha256(newPin);
       }
 
-      await supabaseAdmin.from('admin_security').update(updates).eq('id', 'primary');
+      await updateAdminSecurityRow(updates);
       await logAdminAudit(admin.username, 'change_super_credentials', 'تم تغيير كلمة مرور أو رمز PIN الإدارة العليا', ip);
 
       return NextResponse.json({ success: true });
@@ -390,7 +369,7 @@ export async function POST(req: NextRequest) {
 
       const singlePass = body.vault_password || body.password || body.single_password;
       if (singlePass) {
-        updates.vault_single_hash = hashSha256(String(singlePass).trim());
+        updates.vault_complex_hash = hashSha256(String(singlePass).trim());
       }
       if (body.numeric_password) {
         updates.vault_numeric_hash = hashSha256(body.numeric_password.trim());
@@ -399,7 +378,7 @@ export async function POST(req: NextRequest) {
         updates.vault_complex_hash = hashSha256(body.complex_password.trim());
       }
 
-      await supabaseAdmin.from('admin_security').update(updates).eq('id', 'primary');
+      await updateAdminSecurityRow(updates);
       await logAdminAudit(admin.username, 'update_vault', 'تم تحديث إعدادات وكلمة مرور الخزينة المشفرة', ip);
 
       return NextResponse.json({ success: true });
@@ -409,13 +388,9 @@ export async function POST(req: NextRequest) {
       const { vaultPassword, password, numericPassword, complexPassword } = body;
       const enteredPassword = (vaultPassword || password || '').trim();
 
-      const { data: secRow } = await supabaseAdmin
-        .from('admin_security')
-        .select('vault_enabled, vault_numeric_hash, vault_complex_hash, vault_single_hash')
-        .eq('id', 'primary')
-        .maybeSingle();
+      const secRow = await getAdminSecurityRow();
 
-      if (!secRow?.vault_enabled) {
+      if (secRow && !secRow.vault_enabled) {
         return NextResponse.json({ success: true, unlocked: true });
       }
 
@@ -427,10 +402,10 @@ export async function POST(req: NextRequest) {
 
       // 1. Check single password match
       if (enteredPassword) {
-        if (secRow.vault_single_hash) {
-          isMatch = enteredHash === secRow.vault_single_hash || enteredPassword === defaultVaultPassword;
+        if (secRow?.vault_complex_hash) {
+          isMatch = enteredHash === secRow.vault_complex_hash || enteredPassword === defaultVaultPassword;
         } else {
-          // Default vault password when no custom single hash is stored
+          // Default vault password when no custom hash is stored
           isMatch = enteredPassword === defaultVaultPassword || enteredHash === defaultVaultHash;
         }
       }
@@ -439,7 +414,7 @@ export async function POST(req: NextRequest) {
       if (!isMatch && (numericPassword || complexPassword)) {
         const numHash = hashSha256((numericPassword || '').trim());
         const compHash = hashSha256((complexPassword || '').trim());
-        isMatch = numHash === secRow.vault_numeric_hash && compHash === secRow.vault_complex_hash;
+        isMatch = numHash === secRow?.vault_numeric_hash && compHash === secRow?.vault_complex_hash;
       }
 
       if (isMatch) {
@@ -476,13 +451,9 @@ export async function POST(req: NextRequest) {
 
       const hashedCodes = rawCodes.map((code) => hashSha256(code.trim().toUpperCase()));
 
-      await supabaseAdmin
-        .from('admin_security')
-        .update({
-          recovery_code_hashes: hashedCodes,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', 'primary');
+      await updateAdminSecurityRow({
+        recovery_code_hashes: hashedCodes,
+      });
 
       await logAdminAudit(admin.username, 'generate_recovery_codes', 'تم توليد 5 أكواد استرداد طوارئ جديدة للمشرف العام', ip);
 
@@ -581,21 +552,12 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ success: false, error: 'غير مصرح: للمشرف العام فقط' }, { status: 403 });
       }
 
-      const { data: currentSec } = await supabaseAdmin
-        .from('admin_security')
-        .select('session_version')
-        .eq('id', 'primary')
-        .single();
-
+      const currentSec = await getAdminSecurityRow();
       const newVersion = (currentSec?.session_version || 1) + 1;
 
-      await supabaseAdmin
-        .from('admin_security')
-        .update({
-          session_version: newVersion,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', 'primary');
+      await updateAdminSecurityRow({
+        session_version: newVersion,
+      });
 
       await logAdminAudit(
         admin.username,
@@ -650,17 +612,9 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ success: false, error: updErr.message }, { status: 500 });
       }
 
-      const { data: currentSec } = await supabaseAdmin
-        .from('admin_security')
-        .select('session_version')
-        .eq('id', 'primary')
-        .maybeSingle();
-
+      const currentSec = await getAdminSecurityRow();
       const newVersion = (currentSec?.session_version || 1) + 1;
-      await supabaseAdmin
-        .from('admin_security')
-        .update({ session_version: newVersion })
-        .eq('id', 'primary');
+      await updateAdminSecurityRow({ session_version: newVersion });
 
       await logAdminAudit(
         admin.username,

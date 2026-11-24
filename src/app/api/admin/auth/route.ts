@@ -57,7 +57,7 @@ export async function POST(req: NextRequest) {
       const { data: secRow } = await supabaseAdmin
         .from('admin_security')
         .select('*')
-        .eq('id', 'primary')
+        .limit(1)
         .maybeSingle();
 
       const defaultSuperUsername = secRow?.admin_username || 'Dr. Mazen 2006';
@@ -146,7 +146,7 @@ export async function POST(req: NextRequest) {
         const { data: secRow } = await supabaseAdmin
           .from('admin_security')
           .select('pin_hash, session_version')
-          .eq('id', 'primary')
+          .limit(1)
           .maybeSingle();
 
         const defaultPinHash =
@@ -256,7 +256,7 @@ export async function POST(req: NextRequest) {
       const { data: secRow } = await supabaseAdmin
         .from('admin_security')
         .select('*')
-        .eq('id', 'primary')
+        .limit(1)
         .maybeSingle();
 
       const defaultSuperUsername = secRow?.admin_username || 'Dr. Mazen 2006';
@@ -275,13 +275,14 @@ export async function POST(req: NextRequest) {
       if (existingHashes.includes(enteredCodeHash)) {
         // Consume code immediately
         const remaining = existingHashes.filter((h) => h !== enteredCodeHash);
+        const targetId = secRow?.id !== undefined && secRow?.id !== null ? Number(secRow.id) : 1;
         await supabaseAdmin
           .from('admin_security')
           .update({
             recovery_code_hashes: remaining,
             updated_at: new Date().toISOString(),
           })
-          .eq('id', 'primary');
+          .eq('id', targetId);
 
         const sessionPayload: AdminSession = {
           username: defaultSuperUsername,
@@ -365,7 +366,7 @@ export async function GET(req: NextRequest) {
     const { data: secRow } = await supabaseAdmin
       .from('admin_security')
       .select('session_version')
-      .eq('id', 'primary')
+      .limit(1)
       .maybeSingle();
 
     if (secRow && secRow.session_version > payload.session_version) {

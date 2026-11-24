@@ -25,8 +25,8 @@ async function getEmergencySwitches() {
   try {
     const { data: secRow } = await supabaseAdmin
       .from('admin_security')
-      .select('registration_paused, platform_lockdown, manual_approval_enabled, whatsapp_approval_number')
-      .eq('id', 'primary')
+      .select('registration_paused, platform_lockdown, manual_approval_enabled')
+      .limit(1)
       .maybeSingle();
 
     if (secRow) {
@@ -36,7 +36,7 @@ async function getEmergencySwitches() {
         maintenance_mode: Boolean(secRow.platform_lockdown),
         manual_approval_enabled: Boolean(secRow.manual_approval_enabled),
         require_student_approval: Boolean(secRow.manual_approval_enabled),
-        whatsapp_approval_number: secRow.whatsapp_approval_number || '201000000000',
+        whatsapp_approval_number: '201122144007',
       };
     }
   } catch (err) {
@@ -47,18 +47,28 @@ async function getEmergencySwitches() {
   try {
     const { data: siteSwitches } = await supabaseAdmin
       .from('site_settings')
-      .select('value')
+      .select('value, registration_paused, maintenance_mode, platform_locked, require_student_approval')
       .eq('key', 'emergency_switches')
       .maybeSingle();
 
     const val = siteSwitches?.value || {};
+    const regPaused = Boolean(val.registration_paused ?? siteSwitches?.registration_paused);
+    const locked = Boolean(
+      val.platform_locked || val.maintenance_mode || val.platform_lockdown ||
+      siteSwitches?.platform_locked || siteSwitches?.maintenance_mode
+    );
+    const requireApproval = Boolean(
+      val.manual_approval_enabled || val.require_student_approval ||
+      siteSwitches?.require_student_approval
+    );
+
     return {
-      registration_paused: Boolean(val.registration_paused),
-      platform_locked: Boolean(val.platform_locked || val.maintenance_mode || val.platform_lockdown),
-      maintenance_mode: Boolean(val.platform_locked || val.maintenance_mode || val.platform_lockdown),
-      manual_approval_enabled: Boolean(val.manual_approval_enabled || val.require_student_approval),
-      require_student_approval: Boolean(val.manual_approval_enabled || val.require_student_approval),
-      whatsapp_approval_number: '201000000000',
+      registration_paused: regPaused,
+      platform_locked: locked,
+      maintenance_mode: locked,
+      manual_approval_enabled: requireApproval,
+      require_student_approval: requireApproval,
+      whatsapp_approval_number: '201122144007',
     };
   } catch {
     return {
@@ -67,7 +77,7 @@ async function getEmergencySwitches() {
       maintenance_mode: false,
       manual_approval_enabled: false,
       require_student_approval: false,
-      whatsapp_approval_number: '201000000000',
+      whatsapp_approval_number: '201122144007',
     };
   }
 }
