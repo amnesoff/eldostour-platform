@@ -170,12 +170,11 @@ export function StudentAuthModal() {
 
       if (!res.success) {
         setError(res.error || 'فشل إتمام التسجيل');
-      } else if (res.pendingApproval) {
+      } else {
+        // On successful registration, always open the WhatsApp Activation modal
         setRegisteredCode(res.student?.student_code || '');
         setRegStep('pending_approval');
         setSuccess('');
-      } else {
-        setSuccess('تم إنشاء الحساب والكارنيه الجامعي بنجاح!');
       }
     } catch (err: any) {
       setError(err?.message || 'حدث خطأ أثناء فحص البيانات');

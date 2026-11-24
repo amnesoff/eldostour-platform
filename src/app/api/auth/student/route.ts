@@ -362,10 +362,7 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      const isManualApproval = switches.manual_approval_enabled === true;
-      const isApproved = !isManualApproval;
-
-      // Count students for sequential code
+      // Generate sequential student code (or random unique code)
       const { count } = await supabaseAdmin
         .from('students')
         .select('*', { count: 'exact', head: true });
@@ -376,6 +373,8 @@ export async function POST(req: NextRequest) {
       const passwordHash = hashPasswordWithSalt(password, salt);
       const isUsingUnified = isUnifiedPassword(password);
 
+      // Insert into students via supabaseAdmin (SUPABASE_SERVICE_ROLE_KEY)
+      // New registrations are created with verification_status = 'pending', is_approved = false, welcome_shown = false
       const { data: created, error: insErr } = await supabaseAdmin
         .from('students')
         .insert({
@@ -391,8 +390,8 @@ export async function POST(req: NextRequest) {
           avatar_url: avatarUrl,
           phone: cleanPhone,
           is_guest: false,
-          is_approved: isApproved,
-          verification_status: isApproved ? 'approved' : 'pending',
+          is_approved: false,
+          verification_status: 'pending',
           welcome_shown: false,
           is_verified: false,
           is_banned: false,
@@ -407,8 +406,14 @@ export async function POST(req: NextRequest) {
         .single();
 
       if (insErr || !created) {
+        console.error('Registration insertion error into students table:', insErr);
+        const detailedError = insErr?.message || insErr?.details || insErr?.hint || 'فشل تسجيل الحساب، يرجى إعادة المحاولة';
         return NextResponse.json(
-          { success: false, error: 'فشل تسجيل الحساب، يرجى إعادة المحاولة' },
+          {
+            success: false,
+            error: `فشل تسجيل الحساب: ${detailedError}`,
+            details: insErr,
+          },
           { status: 500 }
         );
       }
@@ -421,7 +426,7 @@ export async function POST(req: NextRequest) {
 
       const response = NextResponse.json({
         success: true,
-        pendingApproval: !isApproved,
+        pendingApproval: true,
         student: stripSensitiveFields(created),
         must_change_password: isUsingUnified,
       });
