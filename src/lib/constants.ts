@@ -61,7 +61,7 @@ export const TEAM_CREDITS: TeamMember[] = [
   },
   {
     role: 'مشرف إداري',
-    name: 'جواد',
+    name: 'يوسف عمرو',
     description: 'المشرف الإداري ومتابعة الدعم الفني وتفعيل حسابات الطلاب',
     iconName: 'ShieldCheck',
   },
@@ -73,13 +73,13 @@ export const TEAM_CREDITS: TeamMember[] = [
   },
 ];
 
-export const LEADERSHIP_BAR_TEXT = 'إشراف وتأسيس: مازن شكري • رحمة علاء • وليد محرم • جواد • ندى زيد';
+export const LEADERSHIP_BAR_TEXT = 'إشراف وتأسيس: مازن شكري • رحمة علاء • وليد محرم • يوسف عمرو • ندى زيد';
 
 export const DEFAULT_SUPERVISOR_WHATSAPP_LIST: SupervisorWhatsAppEntry[] = [
   { name: 'مازن شكري', role: 'المؤسس', phone: '201122144007', enabled: true },
   { name: 'رحمة علاء', role: 'المشرف العام', phone: '', enabled: true },
   { name: 'وليد محرم', role: 'مشرف إداري', phone: '', enabled: true },
-  { name: 'جواد', role: 'مشرف إداري', phone: '', enabled: true },
+  { name: 'يوسف عمرو', role: 'مشرف إداري', phone: '', enabled: true },
   { name: 'ندى زيد', role: 'مشرف عام', phone: '', enabled: true },
 ];
 

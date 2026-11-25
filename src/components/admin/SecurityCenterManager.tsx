@@ -1462,7 +1462,7 @@ export function SecurityCenterManager({ onRefresh }: SecurityCenterManagerProps)
             {!editingSubAdmin && (
               <div className="mb-4 flex flex-wrap items-center gap-1.5">
                 <span className="text-[11px] text-slate-400 ml-1">تعبئة سريعة:</span>
-                {['رحمة علاء', 'وليد محرم', 'جواد', 'ندى زيد'].map((presetName) => (
+                {['رحمة علاء', 'وليد محرم', 'يوسف عمرو', 'ندى زيد'].map((presetName) => (
                   <button
                     key={presetName}
                     type="button"

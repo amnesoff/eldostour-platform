@@ -3,8 +3,9 @@
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Image from 'next/image';
-import { Crown, Award, ShieldCheck, Sparkles, ArrowLeft } from 'lucide-react';
-import { TEAM_CREDITS, COLLEGE_NAME } from '@/lib/constants';
+import { ArrowLeft } from 'lucide-react';
+import { INDEPENDENCE_DISCLAIMER } from '@/lib/constants';
+import { TeamCreditsShowcase } from '@/components/home/TeamCreditsShowcase';
 
 interface SplashScreenProps {
   onComplete?: () => void;
@@ -13,18 +14,16 @@ interface SplashScreenProps {
 
 export function SplashScreen({ onComplete, forceShow = false }: SplashScreenProps) {
   const [visible, setVisible] = useState(false);
-  const [progress, setProgress] = useState(0);
 
   const handleDismiss = React.useCallback(() => {
     sessionStorage.setItem('eldostour_splash_seen', 'true');
     setVisible(false);
     setTimeout(() => {
       onComplete?.();
-    }, 400);
+    }, 320);
   }, [onComplete]);
 
   useEffect(() => {
-    // Check if user already saw the splash screen in this session
     if (!forceShow) {
       const seen = sessionStorage.getItem('eldostour_splash_seen');
       if (seen) {
@@ -35,35 +34,15 @@ export function SplashScreen({ onComplete, forceShow = false }: SplashScreenProp
 
     setVisible(true);
 
-    // Progress bar animation
-    const interval = setInterval(() => {
-      setProgress((prev) => {
-        if (prev >= 100) {
-          clearInterval(interval);
-          return 100;
-        }
-        return prev + 5;
-      });
-    }, 100);
-
-    // Auto-dismiss after 2.4s
+    // Total ~1.6s Staggered Cascade Reveal then smooth fade-out
     const timer = setTimeout(() => {
       handleDismiss();
-    }, 2400);
+    }, 1650);
 
     return () => {
-      clearInterval(interval);
       clearTimeout(timer);
     };
   }, [forceShow, handleDismiss, onComplete]);
-
-  if (!visible) return null;
-
-  const iconMap: Record<string, React.ReactNode> = {
-    Crown: <Crown className="w-4 h-4 text-amber-400" />,
-    Award: <Award className="w-4 h-4 text-emerald-400" />,
-    ShieldCheck: <ShieldCheck className="w-4 h-4 text-blue-400" />,
-  };
 
   return (
     <AnimatePresence>
@@ -71,42 +50,45 @@ export function SplashScreen({ onComplete, forceShow = false }: SplashScreenProp
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          exit={{ opacity: 0, scale: 1.05 }}
-          transition={{ duration: 0.4 }}
-          className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-gradient-to-b from-[#060b18] via-[#0B132B] to-[#040813] text-white px-4 overflow-hidden select-none"
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.35, ease: 'easeOut' }}
+          className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-gradient-to-b from-[#060b18] via-[#0B132B] to-[#040813] text-white px-4 overflow-x-hidden overflow-y-auto select-none"
+          dir="rtl"
         >
-          {/* Subtle background glow circles */}
-          <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
-          <div className="absolute bottom-10 right-10 w-72 h-72 bg-blue-500/10 rounded-full blur-3xl pointer-events-none" />
+          {/* YouTube-style Top Progress Bar (GPU-accelerated scaleX) */}
+          <div className="fixed top-0 inset-x-0 h-1 bg-slate-900/80 z-30 overflow-hidden">
+            <motion.div
+              initial={{ scaleX: 0 }}
+              animate={{ scaleX: 1 }}
+              transition={{ duration: 1.55, ease: [0.22, 1, 0.36, 1] }}
+              style={{ transformOrigin: 'right center' }}
+              className="w-full h-full bg-gradient-to-l from-amber-400 via-yellow-300 to-amber-500 shadow-[0_0_12px_rgba(245,158,11,0.8)] motion-reduce:transform-none"
+            />
+          </div>
 
           {/* Skip button */}
           <button
             onClick={handleDismiss}
-            className="absolute top-6 left-6 z-20 flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-xs text-slate-300 backdrop-blur-md transition-all border border-white/10 active:scale-95"
+            className="absolute top-5 left-5 z-20 flex items-center gap-1.5 px-3.5 py-2 min-h-[44px] rounded-full bg-white/10 hover:bg-white/20 text-xs font-bold text-slate-200 backdrop-blur-md transition-colors border border-white/10 active:scale-95 cursor-pointer"
           >
             <span>تخطي</span>
             <ArrowLeft className="w-3.5 h-3.5" />
           </button>
 
           {/* Main Content Box */}
-          <motion.div
-            initial={{ scale: 0.85, opacity: 0, y: 20 }}
-            animate={{ scale: 1, opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, ease: 'easeOut' }}
-            className="flex flex-col items-center text-center max-w-lg w-full relative z-10"
-          >
-            {/* Animated Official Emblem */}
+          <div className="flex flex-col items-center text-center max-w-2xl w-full relative z-10 py-6 space-y-5">
+            {/* Clean Emblem & Title Fade-In */}
             <motion.div
-              initial={{ rotate: -10, scale: 0.8 }}
-              animate={{ rotate: 0, scale: 1 }}
-              transition={{ duration: 0.6, type: 'spring' }}
-              className="relative mb-6"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.35, ease: 'easeOut' }}
+              className="flex flex-col items-center"
             >
-              <div className="w-24 h-24 rounded-full bg-gradient-to-tr from-amber-500 via-yellow-400 to-amber-600 p-1 shadow-2xl shadow-amber-500/40">
+              <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full bg-gradient-to-tr from-amber-500 via-yellow-400 to-amber-600 p-1 shadow-2xl shadow-amber-500/35 mb-3">
                 <div className="w-full h-full rounded-full bg-[#0B132B] overflow-hidden flex items-center justify-center border-2 border-amber-400/50">
                   <Image
                     src="/logo.png"
-                    alt="منصة الدستور"
+                    alt="منصة الدستور التعليمية"
                     width={96}
                     height={96}
                     className="object-cover w-full h-full rounded-full"
@@ -114,77 +96,25 @@ export function SplashScreen({ onComplete, forceShow = false }: SplashScreenProp
                   />
                 </div>
               </div>
-              <motion.div
-                animate={{ rotate: 360 }}
-                transition={{ duration: 8, repeat: Infinity, ease: 'linear' }}
-                className="absolute -top-2 -right-2 text-yellow-300"
-              >
-                <Sparkles className="w-6 h-6 drop-shadow-[0_0_8px_rgba(250,204,21,0.8)]" />
-              </motion.div>
+
+              <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white">
+                منصة{' '}
+                <span className="bg-gradient-to-r from-amber-400 via-amber-300 to-yellow-500 bg-clip-text text-transparent">
+                  الدستور
+                </span>{' '}
+                التعليمية
+              </h1>
+
+              <p className="text-[11px] sm:text-xs text-amber-300/90 font-bold mt-1.5">
+                {INDEPENDENCE_DISCLAIMER}
+              </p>
             </motion.div>
 
-            {/* Platform Title */}
-            <motion.h1
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.2 }}
-              className="text-2xl sm:text-3xl font-black tracking-tight text-white mb-2"
-            >
-              منصة <span className="bg-gradient-to-r from-amber-400 via-amber-300 to-yellow-500 bg-clip-text text-transparent">الدستور</span> التعليمية
-            </motion.h1>
-
-            <motion.p
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.3 }}
-              className="text-xs sm:text-sm text-amber-300 font-bold mb-6"
-            >
-              {COLLEGE_NAME}
-            </motion.p>
-
-            {/* Team Credits Display */}
-            <motion.div
-              initial={{ opacity: 0, y: 15 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.4 }}
-              className="w-full bg-slate-900/60 backdrop-blur-md rounded-2xl p-4 border border-amber-500/20 shadow-xl mb-6"
-            >
-              <div className="text-[11px] uppercase tracking-wider text-amber-400/80 font-bold mb-3">
-                فريق الإدارة والتطوير
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                {TEAM_CREDITS.map((member) => (
-                  <div
-                    key={member.name}
-                    className="flex sm:flex-col items-center justify-between sm:justify-center p-2 rounded-xl bg-white/5 border border-white/5 text-right sm:text-center"
-                  >
-                    <div className="flex items-center gap-2 sm:mb-1">
-                      <span className="p-1 rounded-md bg-white/10 shrink-0">
-                        {iconMap[member.iconName] || <Crown className="w-4 h-4 text-amber-400" />}
-                      </span>
-                      <span className="text-xs text-slate-300 font-medium sm:hidden">
-                        {member.role}:
-                      </span>
-                    </div>
-                    <div className="text-xs sm:text-sm font-bold text-white">
-                      {member.name}
-                    </div>
-                    <div className="text-[10px] text-amber-300/70 hidden sm:block">
-                      {member.role}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </motion.div>
-
-            {/* Progress bar */}
-            <div className="w-48 h-1.5 bg-slate-800 rounded-full overflow-hidden border border-white/10">
-              <motion.div
-                className="h-full bg-gradient-to-r from-amber-500 to-yellow-400 rounded-full"
-                style={{ width: `${progress}%` }}
-              />
+            {/* Staggered Cascade Reveal of the 5 Leadership Names */}
+            <div className="w-full">
+              <TeamCreditsShowcase compact staggered baseDelay={0.2} />
             </div>
-          </motion.div>
+          </div>
         </motion.div>
       )}
     </AnimatePresence>

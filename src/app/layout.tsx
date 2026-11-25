@@ -33,7 +33,7 @@ export const metadata: Metadata = {
     { name: 'مازن شكري' },
     { name: 'رحمة علاء' },
     { name: 'وليد محرم' },
-    { name: 'جواد' },
+    { name: 'يوسف عمرو' },
     { name: 'ندى زيد' },
   ],
   manifest: '/manifest.json',

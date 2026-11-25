@@ -39,7 +39,7 @@ import { SiteSettings } from '@/types';
 import { supabase } from '@/lib/supabase';
 import { useTheme } from '@/context/ThemeContext';
 
-type CinematicPhase = 'star_intro' | 'cards_slide' | 'glow_wave' | 'settled';
+type CinematicPhase = 'cards_slide' | 'glow_wave' | 'settled';
 
 export default function StudentPortalClient() {
   const { occasionTheme } = useTheme();
@@ -47,55 +47,14 @@ export default function StudentPortalClient() {
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [isRequestModalOpen, setIsRequestModalOpen] = useState(false);
 
-  // TASK 2: Cinematic Intro & Grade Cards Animation Phases
-  const [cinematicPhase, setCinematicPhase] = useState<CinematicPhase>('star_intro');
+  // Grade Cards Animation Phases (settled smoothly after SplashScreen)
+  const [cinematicPhase, setCinematicPhase] = useState<CinematicPhase>('settled');
   const [activeGlowCardIndex, setActiveGlowCardIndex] = useState<number | null>(null);
 
   useEffect(() => {
-    // Check if intro has already played during this tab session
-    const hasSeenIntro = sessionStorage.getItem('eldostour_seen_cinematic_intro');
-    if (hasSeenIntro === 'true') {
-      setCinematicPhase('settled');
-      return;
-    }
-
-    // Phase 1 -> Phase 2 (Cards slide in after 1.8s)
-    const timer1 = setTimeout(() => {
-      setCinematicPhase('cards_slide');
-    }, 1800);
-
-    // Phase 2 -> Phase 3 (Sequential Glow Wave starts at 2.6s)
-    const timer2 = setTimeout(() => {
-      setCinematicPhase('glow_wave');
-      setActiveGlowCardIndex(0); // Card 1
-    }, 2600);
-
-    const glow2 = setTimeout(() => setActiveGlowCardIndex(1), 3000); // Card 2
-    const glow3 = setTimeout(() => setActiveGlowCardIndex(2), 3400); // Card 3
-    const glow4 = setTimeout(() => setActiveGlowCardIndex(3), 3800); // Card 4
-
-    // Phase 4: Settled at 4.2s
-    const timerEnd = setTimeout(() => {
-      setActiveGlowCardIndex(null);
-      setCinematicPhase('settled');
-      sessionStorage.setItem('eldostour_seen_cinematic_intro', 'true');
-    }, 4200);
-
-    return () => {
-      clearTimeout(timer1);
-      clearTimeout(timer2);
-      clearTimeout(glow2);
-      clearTimeout(glow3);
-      clearTimeout(glow4);
-      clearTimeout(timerEnd);
-    };
-  }, []);
-
-  const skipCinematicIntro = () => {
     setCinematicPhase('settled');
     setActiveGlowCardIndex(null);
-    sessionStorage.setItem('eldostour_seen_cinematic_intro', 'true');
-  };
+  }, []);
 
   // Fetch site settings from Supabase
   useEffect(() => {
@@ -126,80 +85,7 @@ export default function StudentPortalClient() {
       {/* Post-Activation Celebration for newly verified students */}
       <PostActivationCelebration />
 
-      {/* 2. TASK 2: Phase 1 Cinematic Star & Logo Intro Overlay (~1.8s) */}
-      <AnimatePresence>
-        {cinematicPhase === 'star_intro' && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0, scale: 0.96 }}
-            transition={{ duration: 0.4 }}
-            onClick={skipCinematicIntro}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/85 backdrop-blur-md cursor-pointer select-none"
-          >
-            <div className="relative flex flex-col items-center px-4 text-center">
-              {/* Radiant Golden Glow Aura */}
-              <motion.div
-                initial={{ scale: 0.3, opacity: 0 }}
-                animate={{ scale: [0.3, 1.3, 1.05], opacity: [0, 0.95, 0.8] }}
-                transition={{ duration: 1.2, ease: 'easeOut' }}
-                className="absolute -inset-14 rounded-full bg-gradient-to-r from-amber-500/35 via-yellow-400/45 to-amber-600/35 blur-3xl pointer-events-none"
-              />
-
-              {/* Central Golden Star & Platform Logo */}
-              <motion.div
-                initial={{ scale: 0, rotate: -70 }}
-                animate={{ scale: 1, rotate: 0 }}
-                transition={{ duration: 0.9, type: 'spring', damping: 14 }}
-                className="relative mb-5"
-              >
-                <div className="relative flex items-center justify-center w-28 h-28 sm:w-32 sm:h-32 rounded-full bg-gradient-to-tr from-amber-600 via-amber-400 to-yellow-300 p-1.5 shadow-2xl shadow-amber-500/60">
-                  <div className="w-full h-full rounded-full bg-slate-950 flex items-center justify-center overflow-hidden border border-amber-300/40">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src="/logo.png"
-                      alt="شعار منصة الدستور"
-                      className="w-20 h-20 sm:w-24 sm:h-24 object-contain drop-shadow-[0_0_15px_rgba(245,158,11,0.9)]"
-                    />
-                  </div>
-                </div>
-                <Sparkles className="absolute -top-3 -right-3 w-8 h-8 text-yellow-300 animate-spin" style={{ animationDuration: '6s' }} />
-                <Sparkles className="absolute -bottom-2 -left-2 w-7 h-7 text-amber-400 animate-pulse" />
-              </motion.div>
-
-              {/* Cinematic Title & Tagline */}
-              <motion.h2
-                initial={{ opacity: 0, y: 15 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.35, duration: 0.6 }}
-                className="text-2xl sm:text-4xl font-black text-white tracking-tight"
-              >
-                منصة <span className="bg-gradient-to-l from-amber-400 via-yellow-300 to-amber-500 bg-clip-text text-transparent">الدستور</span> التعليمية
-              </motion.h2>
-
-              <motion.p
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 0.65, duration: 0.6 }}
-                className="text-xs sm:text-sm text-amber-200/90 font-bold mt-2"
-              >
-                المنصة الأكاديمية المستقلة للعلوم القانونية ⚖️
-              </motion.p>
-
-              <motion.span
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 1, duration: 0.4 }}
-                className="text-[10px] text-slate-400 mt-4 px-3 py-1 rounded-full bg-white/5 border border-white/10"
-              >
-                انقر في أي مكان للتخطي السريع
-              </motion.span>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* 3. Background Transparent Official Logo Watermark */}
+      {/* 2. Background Transparent Official Logo Watermark */}
       <BackgroundWatermark />
 
       {/* 4. Occasion Theme Overlay (Ramadan / New Year / Exams / Valentine) */}
@@ -324,7 +210,7 @@ export default function StudentPortalClient() {
               return (
                 <motion.div
                   key={year.id}
-                  initial={cinematicPhase === 'star_intro' ? { opacity: 0, x: 60 } : false}
+                  initial={false}
                   animate={{ opacity: 1, x: 0 }}
                   transition={{
                     delay: cinematicPhase === 'cards_slide' ? index * 0.12 : 0,
