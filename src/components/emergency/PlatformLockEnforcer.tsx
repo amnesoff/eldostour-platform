@@ -102,7 +102,7 @@ export function PlatformLockEnforcer() {
         {/* Detailed Explanation */}
         <div className="p-4 rounded-2xl bg-slate-950/60 border border-slate-800 text-xs text-slate-300 leading-relaxed text-right space-y-2">
           <p>
-            أعزاءنا طلاب كلية الحقوق والعلوم القانونية، نعتذر عن هذا التوقف المؤقت.
+            أعزاءنا طلاب العلوم القانونية والحقوقية، نعتذر عن هذا التوقف المؤقت.
           </p>
           <p className="text-slate-400">
             تم تفعيل قفل المنصة المؤقت لإجراء تحسينات أمنية دورية وترقية خوادم قواعد البيانات لضمان أعلى سرعة وأمان لحساباتكم ومحتوى المحاضرات.

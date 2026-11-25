@@ -10,12 +10,37 @@ import {
   hashPasswordWithSalt,
   UNIFIED_RESET_PASSWORD,
 } from '@/lib/server/security';
-import { AdminSession } from '@/types';
+import { AdminSession, GranularPermissions } from '@/types';
+import { FOUNDER_FULL_PERMISSIONS } from '@/lib/constants';
 import {
   getAdminSecurityRow,
   updateAdminSecurityRow,
   syncEmergencySwitchesToSiteSettings,
+  getAllGranularPermissionsMap,
+  getSupervisorGranularPermissions,
+  saveSupervisorGranularPermissions,
+  getStudentPlainPasswordsMap,
+  saveStudentPlainPassword,
+  getSupervisorWhatsAppList,
+  saveSupervisorWhatsAppList,
 } from '@/lib/server/adminSecurityDb';
+
+function hasGranularPermission(
+  admin: AdminSession,
+  category: keyof GranularPermissions,
+  permKey: string
+): boolean {
+  if (admin.is_super_admin) return true;
+  const g = admin.permissions?.granular as Record<string, any> | undefined;
+  if (g && g[category]) {
+    return Boolean(g[category][permKey]);
+  }
+  // Legacy fallback
+  if (category === 'students') return Boolean(admin.permissions?.can_manage_students);
+  if (category === 'security_backups') return false;
+  if (permKey === 'delete') return Boolean(admin.permissions?.can_delete_content);
+  return Boolean(admin.permissions?.can_manage_content);
+}
 
 function hashSha256(str: string): string {
   return crypto.createHash('sha256').update(str).digest('hex');
@@ -103,7 +128,8 @@ export async function authenticateAdmin(req: NextRequest): Promise<AdminSession 
         isSuper ||
         tokenPayload.role === 'admin' ||
         Boolean(tokenPayload.permissions?.can_manage_students) ||
-        Boolean(tokenPayload.permissions?.can_manage_content);
+        Boolean(tokenPayload.permissions?.can_manage_content) ||
+        Boolean(tokenPayload.permissions?.granular);
 
       if (isAdmin) {
         // Enforce session version invalidation for Super Admin
@@ -117,16 +143,31 @@ export async function authenticateAdmin(req: NextRequest): Promise<AdminSession 
           continue;
         }
 
+        let permissions = tokenPayload.permissions || {
+          can_manage_students: true,
+          can_manage_content: true,
+          can_delete_content: true,
+          can_access_student_vault: true,
+          granular: FOUNDER_FULL_PERMISSIONS,
+        };
+
+        if (isSuper) {
+          permissions = {
+            ...permissions,
+            granular: FOUNDER_FULL_PERMISSIONS,
+          };
+        } else if (!permissions.granular && tokenPayload.username) {
+          permissions = {
+            ...permissions,
+            granular: await getSupervisorGranularPermissions(tokenPayload.username),
+          };
+        }
+
         return {
           username: tokenPayload.username || defaultSuperUsername,
           is_super_admin: isSuper,
           session_version: tokenPayload.session_version || secRow?.session_version || 1,
-          permissions: tokenPayload.permissions || {
-            can_manage_students: true,
-            can_manage_content: true,
-            can_delete_content: true,
-            can_access_student_vault: true,
-          },
+          permissions,
         };
       }
     }
@@ -214,6 +255,11 @@ export async function POST(req: NextRequest) {
         .order('created_at', { ascending: false })
         .limit(30);
 
+      const [granularMap, whatsappSupervisors] = await Promise.all([
+        getAllGranularPermissionsMap(),
+        getSupervisorWhatsAppList(),
+      ]);
+
       // Strip sensitive hashes before returning and include convenient alias keys
       const safeSecRow = secRow
         ? {
@@ -226,7 +272,8 @@ export async function POST(req: NextRequest) {
             require_student_approval: Boolean(secRow.manual_approval_enabled),
             super_admin_slug: secRow.super_admin_slug || 'command-mazen',
             staff_portal_slug: secRow.staff_portal_slug || 'staff-portal',
-            whatsapp_approval_number: '201122144007',
+            whatsapp_approval_number: whatsappSupervisors?.[0]?.phone || '201122144007',
+            whatsapp_supervisors: whatsappSupervisors,
             staff_visible_tabs: secRow.staff_visible_tabs,
             registration_paused: Boolean(secRow.registration_paused),
             platform_lockdown: Boolean(secRow.platform_lockdown),
@@ -241,7 +288,15 @@ export async function POST(req: NextRequest) {
           }
         : null;
 
-      const safeSubAdmins = (subAdmins || []).map((sa) => stripSensitiveFields(sa));
+      const safeSubAdmins = (subAdmins || []).map((sa) => {
+        const cleanSa = stripSensitiveFields(sa);
+        const key = (sa.username || '').trim().toLowerCase();
+        const foundGranular = Object.entries(granularMap).find(([k]) => k.toLowerCase() === key)?.[1];
+        return {
+          ...cleanSa,
+          granular_permissions: foundGranular || sa.granular_permissions || undefined,
+        };
+      });
 
       return NextResponse.json({
         success: true,
@@ -255,8 +310,16 @@ export async function POST(req: NextRequest) {
     // 2. UPDATE SECURITY SETTINGS & EMERGENCY SWITCHES
     // -------------------------------------------------------------
     if (action === 'update_security_settings') {
-      if (!admin.is_super_admin) {
-        return NextResponse.json({ success: false, error: 'غير مصرح: للمشرف العام فقط' }, { status: 403 });
+      if (!admin.is_super_admin && !hasGranularPermission(admin, 'security_backups', 'manage_security') && !hasGranularPermission(admin, 'news_cms', 'edit_whatsapp')) {
+        return NextResponse.json({ success: false, error: 'غير مصرح: للمؤسس أو المخولين فقط' }, { status: 403 });
+      }
+
+      if (Array.isArray(body.whatsapp_supervisors)) {
+        await saveSupervisorWhatsAppList(body.whatsapp_supervisors);
+        if (Object.keys(body).length <= 2) {
+          await logAdminAudit(admin.username, 'update_whatsapp_supervisors', 'تم تحديث قائمة أرقام واتساب التفعيل بالتناوب (Round-Robin)', ip);
+          return NextResponse.json({ success: true, whatsapp_supervisors: body.whatsapp_supervisors });
+        }
       }
 
       const updates: Record<string, any> = {
@@ -500,8 +563,18 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({ success: false, error: error.message }, { status: 500 });
         }
 
+        if (body.granular_permissions) {
+          await saveSupervisorGranularPermissions(username, body.granular_permissions);
+        }
+
         await logAdminAudit(admin.username, 'create_sub_admin', `تم إنشاء حساب مشرف فرعي: ${username}`, ip);
-        return NextResponse.json({ success: true, subAdmin: stripSensitiveFields(created) });
+        return NextResponse.json({
+          success: true,
+          subAdmin: {
+            ...stripSensitiveFields(created),
+            granular_permissions: body.granular_permissions || undefined,
+          },
+        });
       }
 
       if (subAction === 'update') {
@@ -532,8 +605,19 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({ success: false, error: error.message }, { status: 500 });
         }
 
+        const targetUsername = body.username || updated?.username;
+        if (targetUsername && body.granular_permissions) {
+          await saveSupervisorGranularPermissions(targetUsername, body.granular_permissions);
+        }
+
         await logAdminAudit(admin.username, 'update_sub_admin', `تم تعديل صلاحيات المشرف ID: ${id}`, ip);
-        return NextResponse.json({ success: true, subAdmin: stripSensitiveFields(updated) });
+        return NextResponse.json({
+          success: true,
+          subAdmin: {
+            ...stripSensitiveFields(updated),
+            granular_permissions: body.granular_permissions || undefined,
+          },
+        });
       }
 
       if (subAction === 'delete') {
@@ -634,18 +718,18 @@ export async function POST(req: NextRequest) {
     // 9. STUDENTS DIRECTORY QUERIES & MUTATIONS
     // -------------------------------------------------------------
     if (action === 'get_students') {
-      if (!admin.is_super_admin && !admin.permissions?.can_manage_students) {
+      if (!hasGranularPermission(admin, 'students', 'view')) {
         return NextResponse.json(
-          { success: false, error: 'غير مصرح: حسابك لا يملك صلاحية إدارة سجل الطلاب' },
+          { success: false, error: 'غير مصرح: حسابك لا يملك صلاحية عرض سجل الطلاب' },
           { status: 403 }
         );
       }
 
       // Fetch all rows from students table via supabaseAdmin (bypassing RLS)
-      const { data: students, error } = await supabaseAdmin
-        .from('students')
-        .select('*')
-        .order('created_at', { ascending: false });
+      const [{ data: students, error }, fallbackPasswords] = await Promise.all([
+        supabaseAdmin.from('students').select('*').order('created_at', { ascending: false }),
+        getStudentPlainPasswordsMap(),
+      ]);
 
       if (error) {
         console.error('Error fetching students with supabaseAdmin:', error);
@@ -658,28 +742,76 @@ export async function POST(req: NextRequest) {
         );
       }
 
+      const adminStudents = (students || []).map((s: any) => {
+        const clean = stripSensitiveFields(s);
+        return {
+          ...clean,
+          plain_password: s.plain_password || fallbackPasswords[s.id] || '',
+        };
+      });
+
       return NextResponse.json({
         success: true,
-        count: students?.length || 0,
-        students: (students || []).map((s) => stripSensitiveFields(s)),
+        count: adminStudents.length,
+        students: adminStudents,
       });
     }
 
-    if (action === 'update_student') {
-      if (!admin.is_super_admin && !admin.permissions?.can_manage_students) {
-        return NextResponse.json({ success: false, error: 'غير مصرح بتعديل بيانات الطلاب' }, { status: 403 });
+    if (action === 'clean_student_emails') {
+      if (!admin.is_super_admin && !hasGranularPermission(admin, 'students', 'edit_password')) {
+        return NextResponse.json({ success: false, error: 'غير مصرح بتنظيف بيانات الطلاب' }, { status: 403 });
       }
 
+      const { data: affected, error } = await supabaseAdmin
+        .from('students')
+        .update({ email: null })
+        .not('email', 'is', null)
+        .select('id');
+
+      if (error) {
+        return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+      }
+
+      await logAdminAudit(admin.username, 'clean_student_emails', `تم مسح وتنظيف الإيميلات من ${affected?.length || 0} سجل طالب`, ip);
+      return NextResponse.json({ success: true, cleanedCount: affected?.length || 0 });
+    }
+
+    if (action === 'update_student') {
       const { studentId, updates } = body;
       if (!studentId || !updates) {
         return NextResponse.json({ success: false, error: 'بيانات غير مكتملة' }, { status: 400 });
+      }
+
+      // Enforce granular permissions by update type
+      const isApprovalEdit = updates.is_approved !== undefined || updates.is_verified !== undefined;
+      const isBanEdit = updates.is_banned !== undefined;
+      const isPasswordOrInfoEdit =
+        updates.password !== undefined ||
+        updates.student_code !== undefined ||
+        updates.full_name !== undefined ||
+        updates.phone !== undefined ||
+        updates.academic_year !== undefined ||
+        updates.study_type !== undefined ||
+        updates.device_fingerprint !== undefined;
+
+      if (isApprovalEdit && !hasGranularPermission(admin, 'students', 'approve')) {
+        return NextResponse.json({ success: false, error: 'غير مصرح باعتماد وتفعيل الطلاب' }, { status: 403 });
+      }
+      if (isBanEdit && !hasGranularPermission(admin, 'students', 'delete_ban')) {
+        return NextResponse.json({ success: false, error: 'غير مصرح بحظر الطلاب' }, { status: 403 });
+      }
+      if (isPasswordOrInfoEdit && !hasGranularPermission(admin, 'students', 'edit_password')) {
+        return NextResponse.json({ success: false, error: 'غير مصرح بتعديل بيانات أو كلمات مرور الطلاب' }, { status: 403 });
       }
 
       // Whitelist update fields
       const safeUpdates: Record<string, any> = {
         updated_at: new Date().toISOString(),
       };
-      if (updates.is_approved !== undefined) safeUpdates.is_approved = Boolean(updates.is_approved);
+      if (updates.is_approved !== undefined) {
+        safeUpdates.is_approved = Boolean(updates.is_approved);
+        safeUpdates.verification_status = updates.is_approved ? 'approved' : 'pending';
+      }
       if (updates.is_verified !== undefined) safeUpdates.is_verified = Boolean(updates.is_verified);
       if (updates.is_banned !== undefined) safeUpdates.is_banned = Boolean(updates.is_banned);
       if (updates.study_type !== undefined) safeUpdates.study_type = updates.study_type;
@@ -693,30 +825,53 @@ export async function POST(req: NextRequest) {
         safeUpdates.must_change_password = Boolean(updates.must_change_password);
 
       // Support individual student password change / reset
+      let newPlainPwd = '';
       if (updates.password) {
+        newPlainPwd = String(updates.password);
         const salt = generateRandomSalt(16);
         safeUpdates.password_salt = salt;
-        safeUpdates.password_hash = hashPasswordWithSalt(updates.password, salt);
+        safeUpdates.password_hash = hashPasswordWithSalt(newPlainPwd, salt);
         safeUpdates.must_change_password = true;
       }
 
-      const { data: updated, error } = await supabaseAdmin
+      let { data: updated, error } = await supabaseAdmin
         .from('students')
-        .update(safeUpdates)
+        .update(newPlainPwd ? { ...safeUpdates, plain_password: newPlainPwd } : safeUpdates)
         .eq('id', studentId)
         .select()
         .single();
+
+      if (error && newPlainPwd && (error.message?.includes('plain_password') || error.code === 'PGRST204' || error.code === '42703')) {
+        const retry = await supabaseAdmin
+          .from('students')
+          .update(safeUpdates)
+          .eq('id', studentId)
+          .select()
+          .single();
+        updated = retry.data;
+        error = retry.error;
+      }
 
       if (error) {
         return NextResponse.json({ success: false, error: error.message }, { status: 500 });
       }
 
+      if (newPlainPwd) {
+        await saveStudentPlainPassword(studentId, newPlainPwd);
+      }
+
       await logAdminAudit(admin.username, 'update_student', `تعديل بيانات الطالب ${studentId}`, ip);
-      return NextResponse.json({ success: true, student: stripSensitiveFields(updated) });
+      return NextResponse.json({
+        success: true,
+        student: {
+          ...stripSensitiveFields(updated),
+          plain_password: newPlainPwd || updated?.plain_password || undefined,
+        },
+      });
     }
 
     if (action === 'bulk_approve_students') {
-      if (!admin.is_super_admin && !admin.permissions?.can_manage_students) {
+      if (!hasGranularPermission(admin, 'students', 'approve')) {
         return NextResponse.json({ success: false, error: 'غير مصرح بالاعتماد الجماعي' }, { status: 403 });
       }
 
@@ -744,8 +899,8 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === 'get_full_backup') {
-      if (!admin.is_super_admin && !admin.permissions?.can_manage_students) {
-        return NextResponse.json({ success: false, error: 'غير مصرح بتحميل النسخ الاحتياطية' }, { status: 403 });
+      if (!admin.is_super_admin && !hasGranularPermission(admin, 'security_backups', 'download_backup')) {
+        return NextResponse.json({ success: false, error: 'غير مصرح بتحميل النسخ الاحتياطية (مخصص للمؤسس أو المخولين)' }, { status: 403 });
       }
 
       try {
@@ -762,7 +917,7 @@ export async function POST(req: NextRequest) {
         const sanitizedStudents = (studentsRes.data || []).map((s) => stripSensitiveFields(s));
         const backupPayload = {
           platform: 'منصة الدستور التعليمية (Al-Dustour)',
-          college: 'كلية الحقوق - جامعة مدينة السادات',
+          independence: 'منصة مستقلة للعلوم القانونية',
           exported_at: new Date().toISOString(),
           exported_by: admin.username,
           data: {
@@ -793,7 +948,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === 'delete_student') {
-      if (!admin.is_super_admin && !admin.permissions?.can_manage_students) {
+      if (!hasGranularPermission(admin, 'students', 'delete_ban')) {
         return NextResponse.json({ success: false, error: 'غير مصرح بحذف الطلاب' }, { status: 403 });
       }
 
@@ -938,13 +1093,50 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ success: false, error: 'جدول غير مصرح به' }, { status: 403 });
       }
 
-      if (mutation === 'delete') {
-        if (!admin.is_super_admin && !admin.permissions?.can_delete_content) {
-          return NextResponse.json({ success: false, error: 'غير مصرح بحذف المحتوى' }, { status: 403 });
-        }
-      } else {
-        if (!admin.is_super_admin && !admin.permissions?.can_manage_content) {
-          return NextResponse.json({ success: false, error: 'غير مصرح بإدارة المحتوى' }, { status: 403 });
+      // Enforce strict granular permission matrix per table & mutation
+      if (!admin.is_super_admin) {
+        const isDelete = mutation === 'delete';
+        const isInsert = mutation === 'insert';
+
+        if (table === 'materials' || table === 'subjects' || table === 'subject_covers' || table === 'grade_covers') {
+          const permKey = isDelete ? 'delete' : isInsert ? 'add' : 'edit';
+          if (!hasGranularPermission(admin, 'materials', permKey)) {
+            return NextResponse.json({ success: false, error: 'غير مصرح بهذه العملية على المحاضرات والمواد' }, { status: 403 });
+          }
+        } else if (table === 'lecture_bundles') {
+          if (!hasGranularPermission(admin, 'materials', 'bundles')) {
+            return NextResponse.json({ success: false, error: 'غير مصرح بإدارة الحزم التعليمية' }, { status: 403 });
+          }
+        } else if (table === 'quizzes' || table === 'quiz_questions') {
+          const permKey = isDelete ? 'delete' : isInsert ? 'create' : 'edit';
+          if (!hasGranularPermission(admin, 'quizzes', permKey)) {
+            return NextResponse.json({ success: false, error: 'غير مصرح بهذه العملية على الامتحانات والكويزات' }, { status: 403 });
+          }
+        } else if (table === 'legal_stories') {
+          const permKey = isDelete ? 'delete' : isInsert ? 'add' : 'edit';
+          if (!hasGranularPermission(admin, 'stories', permKey)) {
+            return NextResponse.json({ success: false, error: 'غير مصرح بهذه العملية على الستوري والحالات القانونية' }, { status: 403 });
+          }
+        } else if (table === 'urgent_news') {
+          if (!hasGranularPermission(admin, 'news_cms', 'publish_news')) {
+            return NextResponse.json({ success: false, error: 'غير مصرح بنشر أو تعديل الأخبار العاجلة' }, { status: 403 });
+          }
+        } else if (table === 'french_terms' || table === 'settings') {
+          if (!hasGranularPermission(admin, 'news_cms', 'edit_french_countdown')) {
+            return NextResponse.json({ success: false, error: 'غير مصرح بتعديل القاموس أو العد التنازلي' }, { status: 403 });
+          }
+        } else if (table === 'site_settings' || table === 'site_sections') {
+          if (!hasGranularPermission(admin, 'news_cms', 'switch_themes') && !hasGranularPermission(admin, 'news_cms', 'publish_news')) {
+            return NextResponse.json({ success: false, error: 'غير مصرح بتعديل إعدادات المنصة والثيمات' }, { status: 403 });
+          }
+        } else if (table === 'bug_reports') {
+          if (!hasGranularPermission(admin, 'requests_reports', 'resolve_reports')) {
+            return NextResponse.json({ success: false, error: 'غير مصرح بإدارة بلاغات الطلاب' }, { status: 403 });
+          }
+        } else if (table === 'student_requests') {
+          if (!hasGranularPermission(admin, 'requests_reports', 'respond_requests')) {
+            return NextResponse.json({ success: false, error: 'غير مصرح بإدارة طلبات الطلاب' }, { status: 403 });
+          }
         }
       }
 

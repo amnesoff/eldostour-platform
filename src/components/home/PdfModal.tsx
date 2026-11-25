@@ -154,7 +154,7 @@ export function PdfModal({ material, onClose }: PdfModalProps) {
 
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const watermarkName = student?.full_name || (isGuest ? 'زائر' : 'طالب كلية الحقوق');
+  const watermarkName = student?.full_name || (isGuest ? 'زائر' : 'طالب العلوم القانونية');
   const watermarkCode = student?.student_code || 'DST-LAW';
   const fullWatermarkText = `${watermarkName} • ${watermarkCode} • ${PLATFORM_NAME}`;
 

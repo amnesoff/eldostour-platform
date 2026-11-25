@@ -49,7 +49,7 @@ export function Logo({ className = '', size = 'md', showSubtitle = true }: LogoP
         </span>
         {showSubtitle && (
           <span className={`text-slate-500 dark:text-amber-200/60 font-medium ${currentSize.sub}`}>
-            كلية الحقوق • البوابة الأكاديمية
+            العلوم القانونية • منصة مستقلة
           </span>
         )}
       </div>

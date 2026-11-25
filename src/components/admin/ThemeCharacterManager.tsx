@@ -182,7 +182,7 @@ export function ThemeCharacterManager({ onSettingsUpdated }: ThemeCharacterManag
     {
       id: 'default',
       name: 'الوضع العادي الرسمي',
-      desc: 'المظهر الأكاديمي القياسي لكلية الحقوق مع الألوان الرسمية للكحلي والذهبي.',
+      desc: 'المظهر الأكاديمي القياسي للعلوم القانونية مع الألوان الرسمية للكحلي والذهبي.',
       icon: Layout,
       color: 'border-slate-700 bg-slate-900',
     },

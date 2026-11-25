@@ -18,6 +18,7 @@ export function stripSensitiveFields<T>(data: T): T {
     const sensitiveKeys = new Set([
       'password_hash',
       'password_salt',
+      'plain_password',
       'pin_hash',
       'pin_code',
       'vault_numeric_hash',
@@ -32,15 +33,12 @@ export function stripSensitiveFields<T>(data: T): T {
       'staff_portal_key',
       'correct_answer', // Stripped from student quiz payloads
       'correct_index',
+      'email',
     ]);
 
     const clean: Record<string, any> = {};
     for (const [key, val] of Object.entries(data as Record<string, any>)) {
       if (!sensitiveKeys.has(key)) {
-        // Never expose hidden synthetic internal email
-        if (key === 'email' && typeof val === 'string' && val.includes('@hidden.aldostour.local')) {
-          continue;
-        }
         clean[key] = typeof val === 'object' && val !== null ? stripSensitiveFields(val) : val;
       }
     }

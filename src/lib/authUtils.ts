@@ -23,10 +23,13 @@ export async function hashPassword(password: string): Promise<string> {
 }
 
 /**
- * Check if a student name contains reserved / impersonation words
+ * Check if a student name contains reserved / impersonation words.
+ * Normal personal names like "مازن", "رحمة", "وليد" are allowed;
+ * only exact founder/admin impersonation titles such as "المؤسس مازن" are restricted.
  */
 export function isReservedName(name: string): boolean {
   const reservedWords = [
+    'المؤسس مازن',
     'المؤسس',
     'مؤسس',
     'ادمن',
@@ -37,15 +40,9 @@ export function isReservedName(name: string): boolean {
     'الدستور',
     'test',
     'hacker',
-    'mazen',
-    'مازن',
-    'rahma',
-    'رحمة',
-    'walid',
-    'وليد',
   ];
 
-  const clean = name.toLowerCase().trim();
+  const clean = name.toLowerCase().trim().replace(/\s+/g, ' ');
   return reservedWords.some((w) => clean.includes(w));
 }
 

@@ -498,10 +498,43 @@ export default function AdminDashboardClient({
     },
   ];
 
-  // Filter cards for sub-admins
+  // Filter cards for sub-admins using strict granular permissions
+  const gPerms = adminSession?.permissions?.granular;
+  const isFounder = Boolean(adminSession?.is_super_admin);
+
+  const canSeeCard = (id: AdminModuleId): boolean => {
+    if (isFounder) return true;
+    if (!gPerms) {
+      if (id === 'security' || id === 'backup') return false;
+      return true;
+    }
+    switch (id) {
+      case 'materials':
+        return Boolean(gPerms.materials?.view);
+      case 'stories':
+        return Boolean(gPerms.stories?.view);
+      case 'quizzes':
+        return Boolean(gPerms.quizzes?.view);
+      case 'students':
+        return Boolean(gPerms.students?.view);
+      case 'security':
+        return Boolean(gPerms.security_backups?.view);
+      case 'backup':
+        return Boolean(gPerms.security_backups?.download_backup);
+      case 'reports':
+        return Boolean(gPerms.requests_reports?.view && gPerms.requests_reports?.resolve_reports);
+      case 'requests':
+        return Boolean(gPerms.requests_reports?.view && gPerms.requests_reports?.respond_requests);
+      case 'settings':
+        return Boolean(gPerms.news_cms?.view);
+      default:
+        return false;
+    }
+  };
+
   const visibleCards = HUB_CARDS.filter((card) => {
-    if (card.isSuperAdminOnly && !adminSession?.is_super_admin) return false;
-    return true;
+    if (card.isSuperAdminOnly && !isFounder) return false;
+    return canSeeCard(card.id);
   });
 
   return (
@@ -686,9 +719,9 @@ export default function AdminDashboardClient({
                 </div>
               </div>
 
-              {/* Module-Specific Sub-Navigation Tabs */}
+              {/* Module-Specific Sub-Navigation Tabs (Wrapped, No Horizontal Swipe) */}
               {activeModule === 'materials' && (
-                <div className="flex items-center gap-1.5 overflow-x-auto w-full md:w-auto pb-1 md:pb-0">
+                <div className="flex flex-wrap items-center gap-1.5 w-full md:w-auto">
                   <button
                     type="button"
                     onClick={() => setMaterialsSubTab('table')}
@@ -700,88 +733,102 @@ export default function AdminDashboardClient({
                   >
                     جدول المحاضرات ({totalMaterials})
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => setMaterialsSubTab('bundles')}
-                    className={`px-3 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap min-h-[44px] cursor-pointer ${
-                      materialsSubTab === 'bundles'
-                        ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
-                        : 'bg-slate-800 text-slate-300 hover:bg-slate-750'
-                    }`}
-                  >
-                    حزم المحاضرات (Bundles)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setMaterialsSubTab('upload')}
-                    className={`px-3 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap min-h-[44px] cursor-pointer ${
-                      materialsSubTab === 'upload'
-                        ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
-                        : 'bg-slate-800 text-slate-300 hover:bg-slate-750'
-                    }`}
-                  >
-                    الرفع السريع ☁️
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setMaterialsSubTab('covers')}
-                    className={`px-3 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap min-h-[44px] cursor-pointer ${
-                      materialsSubTab === 'covers'
-                        ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
-                        : 'bg-slate-800 text-slate-300 hover:bg-slate-750'
-                    }`}
-                  >
-                    أغلفة المواد
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setMaterialsSubTab('subjects')}
-                    className={`px-3 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap min-h-[44px] cursor-pointer ${
-                      materialsSubTab === 'subjects'
-                        ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
-                        : 'bg-slate-800 text-slate-300 hover:bg-slate-750'
-                    }`}
-                  >
-                    المواد المقررة ({totalSubjects})
-                  </button>
+                  {(isFounder || !gPerms || gPerms.materials?.bundles) && (
+                    <button
+                      type="button"
+                      onClick={() => setMaterialsSubTab('bundles')}
+                      className={`px-3 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap min-h-[44px] cursor-pointer ${
+                        materialsSubTab === 'bundles'
+                          ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
+                          : 'bg-slate-800 text-slate-300 hover:bg-slate-750'
+                      }`}
+                    >
+                      حزم المحاضرات (Bundles)
+                    </button>
+                  )}
+                  {(isFounder || !gPerms || gPerms.materials?.add) && (
+                    <button
+                      type="button"
+                      onClick={() => setMaterialsSubTab('upload')}
+                      className={`px-3 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap min-h-[44px] cursor-pointer ${
+                        materialsSubTab === 'upload'
+                          ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
+                          : 'bg-slate-800 text-slate-300 hover:bg-slate-750'
+                      }`}
+                    >
+                      الرفع السريع ☁️
+                    </button>
+                  )}
+                  {(isFounder || !gPerms || gPerms.materials?.bundles) && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setMaterialsSubTab('covers')}
+                        className={`px-3 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap min-h-[44px] cursor-pointer ${
+                          materialsSubTab === 'covers'
+                            ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
+                            : 'bg-slate-800 text-slate-300 hover:bg-slate-750'
+                        }`}
+                      >
+                        أغلفة المواد
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setMaterialsSubTab('subjects')}
+                        className={`px-3 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap min-h-[44px] cursor-pointer ${
+                          materialsSubTab === 'subjects'
+                            ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
+                            : 'bg-slate-800 text-slate-300 hover:bg-slate-750'
+                        }`}
+                      >
+                        المواد المقررة ({totalSubjects})
+                      </button>
+                    </>
+                  )}
                 </div>
               )}
 
               {activeModule === 'settings' && (
-                <div className="flex items-center gap-1.5 overflow-x-auto w-full md:w-auto pb-1 md:pb-0">
-                  <button
-                    type="button"
-                    onClick={() => setSettingsSubTab('cms')}
-                    className={`px-3 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap min-h-[44px] cursor-pointer ${
-                      settingsSubTab === 'cms'
-                        ? 'bg-teal-500 text-slate-950 shadow-md'
-                        : 'bg-slate-800 text-slate-300 hover:bg-slate-750'
-                    }`}
-                  >
-                    الـ CMS والواتساب
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSettingsSubTab('countdown')}
-                    className={`px-3 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap min-h-[44px] cursor-pointer ${
-                      settingsSubTab === 'countdown'
-                        ? 'bg-teal-500 text-slate-950 shadow-md'
-                        : 'bg-slate-800 text-slate-300 hover:bg-slate-750'
-                    }`}
-                  >
-                    عداد الامتحانات
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSettingsSubTab('french')}
-                    className={`px-3 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap min-h-[44px] cursor-pointer ${
-                      settingsSubTab === 'french'
-                        ? 'bg-teal-500 text-slate-950 shadow-md'
-                        : 'bg-slate-800 text-slate-300 hover:bg-slate-750'
-                    }`}
-                  >
-                    القاموس الفرنسي
-                  </button>
+                <div className="flex flex-wrap items-center gap-1.5 w-full md:w-auto">
+                  {(isFounder || !gPerms || gPerms.news_cms?.edit_whatsapp || gPerms.news_cms?.switch_themes) && (
+                    <button
+                      type="button"
+                      onClick={() => setSettingsSubTab('cms')}
+                      className={`px-3 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap min-h-[44px] cursor-pointer ${
+                        settingsSubTab === 'cms'
+                          ? 'bg-teal-500 text-slate-950 shadow-md'
+                          : 'bg-slate-800 text-slate-300 hover:bg-slate-750'
+                      }`}
+                    >
+                      الـ CMS والواتساب
+                    </button>
+                  )}
+                  {(isFounder || !gPerms || gPerms.news_cms?.edit_french_countdown) && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setSettingsSubTab('countdown')}
+                        className={`px-3 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap min-h-[44px] cursor-pointer ${
+                          settingsSubTab === 'countdown'
+                            ? 'bg-teal-500 text-slate-950 shadow-md'
+                            : 'bg-slate-800 text-slate-300 hover:bg-slate-750'
+                        }`}
+                      >
+                        عداد الامتحانات
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSettingsSubTab('french')}
+                        className={`px-3 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap min-h-[44px] cursor-pointer ${
+                          settingsSubTab === 'french'
+                            ? 'bg-teal-500 text-slate-950 shadow-md'
+                            : 'bg-slate-800 text-slate-300 hover:bg-slate-750'
+                        }`}
+                      >
+                        القاموس الفرنسي
+                      </button>
+                    </>
+                  )}
                   <button
                     type="button"
                     onClick={() => setSettingsSubTab('themes')}

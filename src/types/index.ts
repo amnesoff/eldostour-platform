@@ -11,6 +11,7 @@ export interface Student {
   full_name: string;
   email?: string;
   password_hash?: string;
+  plain_password?: string;
   gender: StudentGender;
   academic_year: AcademicYearId;
   study_type?: StudyType;
@@ -103,6 +104,59 @@ export interface BugReport {
   created_at: string;
 }
 
+export interface GranularPermissions {
+  materials: {
+    view: boolean;
+    add: boolean;
+    edit: boolean;
+    delete: boolean;
+    bundles: boolean;
+  };
+  quizzes: {
+    view: boolean;
+    create: boolean;
+    edit: boolean;
+    delete: boolean;
+    results: boolean;
+  };
+  stories: {
+    view: boolean;
+    add: boolean;
+    edit: boolean;
+    delete: boolean;
+  };
+  students: {
+    view: boolean;
+    approve: boolean;
+    edit_password: boolean;
+    delete_ban: boolean;
+  };
+  news_cms: {
+    view: boolean;
+    publish_news: boolean;
+    switch_themes: boolean;
+    edit_french_countdown: boolean;
+    edit_whatsapp: boolean;
+  };
+  requests_reports: {
+    view: boolean;
+    resolve_reports: boolean;
+    respond_requests: boolean;
+  };
+  security_backups: {
+    view: boolean;
+    manage_security: boolean;
+    download_backup: boolean;
+  };
+}
+
+export interface SupervisorWhatsAppEntry {
+  name: string;
+  role: string;
+  phone: string;
+  enabled?: boolean;
+}
+
 export interface SubAdminUser {
   id: string;
   username: string;
@@ -112,6 +166,7 @@ export interface SubAdminUser {
   can_manage_content: boolean;
   can_delete_content: boolean;
   can_access_student_vault: boolean;
+  granular_permissions?: GranularPermissions;
   created_at?: string;
   updated_at?: string;
 }
@@ -145,6 +200,7 @@ export interface AdminSession {
     can_manage_content: boolean;
     can_delete_content: boolean;
     can_access_student_vault: boolean;
+    granular?: GranularPermissions;
   };
 }
 

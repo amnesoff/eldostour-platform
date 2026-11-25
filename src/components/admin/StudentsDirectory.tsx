@@ -13,7 +13,6 @@ import {
   GraduationCap,
   ShieldAlert,
   X,
-  Mail,
   Calendar,
   Lock,
   Unlock,
@@ -41,6 +40,7 @@ import {
   adminGetSecurityData,
   adminUpdateVault,
   adminUnlockVault,
+  adminCleanStudentEmails,
 } from '@/lib/apiClient';
 import { Student, AcademicYearId, StudentGender, AdminSession, AdminSecuritySettings } from '@/types';
 import { ACADEMIC_YEARS } from '@/lib/constants';
@@ -51,7 +51,6 @@ import {
   validateVaultComplexPassword,
   logAdminSecurityEvent,
   maskPhoneNumber,
-  maskEmail,
 } from '@/lib/authUtils';
 
 interface StudentsDirectoryProps {
@@ -436,12 +435,11 @@ export function StudentsDirectory({ adminSession }: StudentsDirectoryProps) {
         const cleanDigits = q.replace(/[\s-]/g, '');
         const matchesName = s.full_name?.toLowerCase().includes(q);
         const matchesCode = s.student_code?.toLowerCase().includes(q);
-        const matchesEmail = s.email?.toLowerCase().includes(q);
         const sPhoneClean = s.phone?.replace(/[\s-]/g, '') || '';
         const matchesPhone = Boolean(
           cleanDigits && (sPhoneClean.includes(cleanDigits) || sPhoneClean.endsWith(cleanDigits))
         );
-        return Boolean(matchesName || matchesCode || matchesEmail || matchesPhone);
+        return Boolean(matchesName || matchesCode || matchesPhone);
       }
 
       return true;
@@ -656,8 +654,8 @@ export function StudentsDirectory({ adminSession }: StudentsDirectoryProps) {
       'حالة الاعتماد',
       'نوع الحساب',
       'رقم الهاتف',
+      'كلمة المرور',
       'الشعبة',
-      'البريد الإلكتروني',
       'النوع',
       'الفرقة الدراسية',
       'تاريخ التسجيل',
@@ -668,8 +666,8 @@ export function StudentsDirectory({ adminSession }: StudentsDirectoryProps) {
       s.is_guest ? 'زائر' : s.is_approved === false ? 'معلق (بانتظار المراجعة)' : 'معتمد رسمياً',
       s.is_guest ? 'زائر (Lead)' : 'طالب رسمي',
       s.phone || 'غير مسجل',
+      s.plain_password || 'غير مسجلة',
       s.study_type || 'انتظام',
-      s.email || 'غير مسجل',
       s.gender === 'female' ? 'طالبة' : 'طالب',
       ACADEMIC_YEARS.find((y) => y.id === s.academic_year)?.name || `الفرقة ${s.academic_year}`,
       new Date(s.created_at).toLocaleDateString('ar-EG'),
@@ -768,6 +766,27 @@ export function StudentsDirectory({ adminSession }: StudentsDirectoryProps) {
             <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
             <span>تحديث</span>
           </button>
+
+          {/* Clean Legacy Emails from DB */}
+          {adminSession?.is_super_admin && (
+            <button
+              onClick={async () => {
+                if (!confirm('هل تريد مسح جميع عناوين البريد الإلكتروني المخزنة في قاعدة بيانات الطلاب نهائياً؟')) return;
+                const res = await adminCleanStudentEmails();
+                if (res?.success) {
+                  alert(`تم مسح وتنظيف الإيميلات من ${res.cleanedCount || 0} سجل طالب بنجاح!`);
+                  fetchStudents(true);
+                } else {
+                  alert(res?.error || 'فشل تنظيف الإيميلات');
+                }
+              }}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 text-xs font-bold border border-rose-500/30 transition-colors cursor-pointer"
+              title="مسح الإيميلات من جدول الطلاب"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>تنظيف الإيميلات 🧹</span>
+            </button>
+          )}
 
           {/* Export CSV */}
           <button
@@ -892,7 +911,7 @@ export function StudentsDirectory({ adminSession }: StudentsDirectoryProps) {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="بحث بالاسم الكامل، أو رقم القيد (DST-1001)، أو الموبايل (010...)، أو الإيميل..."
+            placeholder="بحث بالاسم الكامل، أو رقم القيد (DST-1001)، أو آخر 4 أرقام من الموبايل..."
             className="w-full h-10 pr-10 pl-4 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
           />
           {searchQuery && (
@@ -1120,7 +1139,7 @@ export function StudentsDirectory({ adminSession }: StudentsDirectoryProps) {
                       <th className="py-3.5 px-3">الهاتف والواتساب</th>
                       <th className="py-3.5 px-3">الفرقة والشعبة</th>
                       <th className="py-3.5 px-3">حالة الاعتماد والنوع</th>
-                      <th className="py-3.5 px-3">البريد الإلكتروني</th>
+                      <th className="py-3.5 px-3">كلمة المرور</th>
                       <th className="py-3.5 px-3">تاريخ التسجيل</th>
                       <th className="py-3.5 px-3 text-center">الإجراءات والاعتماد</th>
                     </tr>
@@ -1134,7 +1153,6 @@ export function StudentsDirectory({ adminSession }: StudentsDirectoryProps) {
                       const isPending = !s.is_guest && s.is_approved === false;
                       const isRowRevealed = revealedRows.has(s.id);
                       const displayPhone = isRowRevealed ? s.phone : maskPhoneNumber(s.phone);
-                      const displayEmail = isRowRevealed ? s.email : maskEmail(s.email);
                       const isPhotoRevealed = revealedPhotos.has(s.id);
                       const isSelected = selectedStudentIds.includes(s.id);
 
@@ -1335,18 +1353,31 @@ export function StudentsDirectory({ adminSession }: StudentsDirectoryProps) {
                             </div>
                           </td>
 
-                          {/* Email */}
-                          <td className="py-3 px-3 font-mono text-slate-400 whitespace-nowrap">
-                            {s.email ? (
-                              <a
-                                href={`mailto:${s.email}`}
-                                className="hover:text-amber-400 hover:underline flex items-center gap-1"
-                              >
-                                <Mail className="w-3 h-3 text-slate-500" />
-                                <span>{displayEmail}</span>
-                              </a>
+                          {/* Password (Visible for Admin Management) */}
+                          <td className="py-3 px-3 font-mono whitespace-nowrap">
+                            {s.plain_password ? (
+                              <div className="flex items-center gap-1.5">
+                                <span
+                                  dir="ltr"
+                                  className="px-2 py-0.5 rounded-lg bg-slate-800 border border-amber-500/25 text-amber-300 font-bold text-xs"
+                                >
+                                  {s.plain_password}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleCopy(s.plain_password || '', `pwd-${s.id}`)}
+                                  className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-amber-400 cursor-pointer"
+                                  title="نسخ كلمة المرور"
+                                >
+                                  {copiedId === `pwd-${s.id}` ? (
+                                    <Check className="w-3 h-3 text-emerald-400" />
+                                  ) : (
+                                    <Copy className="w-3 h-3" />
+                                  )}
+                                </button>
+                              </div>
                             ) : (
-                              <span className="text-slate-500">زائر بدون إيميل</span>
+                              <span className="text-slate-500 text-[11px]">غير مسجلة</span>
                             )}
                           </td>
 
@@ -1487,7 +1518,6 @@ export function StudentsDirectory({ adminSession }: StudentsDirectoryProps) {
                   const isPending = !s.is_guest && s.is_approved === false;
                   const isRowRevealed = revealedRows.has(s.id);
                   const displayPhone = isRowRevealed ? s.phone : maskPhoneNumber(s.phone);
-                  const displayEmail = isRowRevealed ? s.email : maskEmail(s.email);
                   const isSelected = selectedStudentIds.includes(s.id);
 
                   return (
@@ -1584,12 +1614,24 @@ export function StudentsDirectory({ adminSession }: StudentsDirectoryProps) {
                           </div>
                         )}
 
-                        {s.email && (
-                          <div className="text-[11px] font-mono text-slate-400 flex items-center gap-1 pt-0.5">
-                            <Mail className="w-3 h-3 text-slate-500" />
-                            <span>{displayEmail}</span>
+                        <div className="text-[11px] font-mono text-amber-300 flex items-center justify-between gap-2 pt-1">
+                          <div className="flex items-center gap-1.5">
+                            <KeyRound className="w-3 h-3 text-amber-400 shrink-0" />
+                            <span>كلمة المرور:</span>
+                            <strong dir="ltr" className="px-1.5 py-0.5 rounded bg-slate-800 border border-amber-500/25">
+                              {s.plain_password || 'غير مسجلة'}
+                            </strong>
                           </div>
-                        )}
+                          {s.plain_password && (
+                            <button
+                              type="button"
+                              onClick={() => handleCopy(s.plain_password || '', `mpwd-${s.id}`)}
+                              className="px-2 py-1 rounded bg-slate-800 text-slate-300 text-[10px]"
+                            >
+                              {copiedId === `mpwd-${s.id}` ? 'تم النسخ ✓' : 'نسخ'}
+                            </button>
+                          )}
+                        </div>
                       </div>
 
                       {/* Action Buttons Row */}

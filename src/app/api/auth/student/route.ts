@@ -20,6 +20,10 @@ import {
   generateSequentialStudentCode,
   generateGuestCode,
 } from '@/lib/authUtils';
+import {
+  getNextRoundRobinWhatsApp,
+  saveStudentPlainPassword,
+} from '@/lib/server/adminSecurityDb';
 
 async function getEmergencySwitches() {
   try {
@@ -133,13 +137,11 @@ export async function POST(req: NextRequest) {
       }
 
       const cleanPhone = rawInput.replace(/[\s-]/g, '');
-      const syntheticEmail = `${cleanPhone}@hidden.aldostour.local`;
 
-      // Query student by phone, or synthetic hidden email, or legacy direct email
+      // Query student by phone (or student_code) - no hidden email addresses
       let student: any = null;
       let dbErr: any = null;
 
-      // 1. Try phone match first
       const { data: byPhone, error: phoneErr } = await supabaseAdmin
         .from('students')
         .select('*')
@@ -149,15 +151,14 @@ export async function POST(req: NextRequest) {
       if (byPhone) {
         student = byPhone;
       } else {
-        // 2. Try synthetic email or legacy direct email
-        const { data: byEmail, error: emailErr } = await supabaseAdmin
+        const { data: byCode, error: codeErr } = await supabaseAdmin
           .from('students')
           .select('*')
-          .or(`email.eq.${syntheticEmail},email.eq.${rawInput.toLowerCase()}`)
+          .eq('student_code', rawInput.toUpperCase())
           .maybeSingle();
 
-        student = byEmail;
-        dbErr = emailErr || phoneErr;
+        student = byCode;
+        dbErr = codeErr || phoneErr;
       }
 
       if (dbErr || !student) {
@@ -316,9 +317,6 @@ export async function POST(req: NextRequest) {
       }
 
       const cleanPhone = rawPhone.trim().replace(/[\s-]/g, '');
-      const syntheticEmail = body.email && !body.email.includes('@hidden.aldostour.local')
-        ? sanitizeInput(body.email).toLowerCase()
-        : `${cleanPhone}@hidden.aldostour.local`;
 
       // Check emergency switches
       const switches = await getEmergencySwitches();
@@ -362,48 +360,70 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      // Generate sequential student code (or random unique code)
+      // Generate collision-proof unique student_code so students_student_code_key never fails
       const { count } = await supabaseAdmin
         .from('students')
         .select('*', { count: 'exact', head: true });
-      const studentCode = generateSequentialStudentCode(1001 + (count || 0));
+      let studentCode = generateSequentialStudentCode(1001 + (count || 0));
+
+      for (let attempt = 0; attempt < 6; attempt++) {
+        const { data: codeExists } = await supabaseAdmin
+          .from('students')
+          .select('id')
+          .eq('student_code', studentCode)
+          .maybeSingle();
+        if (!codeExists) break;
+        const randSuffix = Math.floor(1000 + Math.random() * 9000);
+        studentCode = `DST-${new Date().getFullYear()}-${randSuffix}${attempt}`;
+      }
 
       // Hash password with salt
       const salt = generateRandomSalt(16);
       const passwordHash = hashPasswordWithSalt(password, salt);
       const isUsingUnified = isUnifiedPassword(password);
 
-      // Insert into students via supabaseAdmin (SUPABASE_SERVICE_ROLE_KEY)
-      // New registrations are created with verification_status = 'pending', is_approved = false, welcome_shown = false
-      const { data: created, error: insErr } = await supabaseAdmin
+      const baseInsertPayload: Record<string, any> = {
+        student_code: studentCode,
+        full_name: fullName,
+        email: null,
+        password_hash: passwordHash,
+        password_salt: salt,
+        must_change_password: isUsingUnified,
+        gender,
+        academic_year: academicYear,
+        study_type: studyType,
+        avatar_url: avatarUrl,
+        phone: cleanPhone,
+        is_guest: false,
+        is_approved: false,
+        verification_status: 'pending',
+        welcome_shown: false,
+        is_verified: false,
+        is_banned: false,
+        device_fingerprint: deviceFingerprint || null,
+        last_device_info: deviceInfo || null,
+        activity_score: 5,
+        last_active_at: new Date().toISOString(),
+        terms_accepted_at: new Date().toISOString(),
+        contract_version: 'v2.0-EG',
+      };
+
+      // Insert into students via supabaseAdmin; include plain_password if column exists
+      let { data: created, error: insErr } = await supabaseAdmin
         .from('students')
-        .insert({
-          student_code: studentCode,
-          full_name: fullName,
-          email: syntheticEmail,
-          password_hash: passwordHash,
-          password_salt: salt,
-          must_change_password: isUsingUnified,
-          gender,
-          academic_year: academicYear,
-          study_type: studyType,
-          avatar_url: avatarUrl,
-          phone: cleanPhone,
-          is_guest: false,
-          is_approved: false,
-          verification_status: 'pending',
-          welcome_shown: false,
-          is_verified: false,
-          is_banned: false,
-          device_fingerprint: deviceFingerprint || null,
-          last_device_info: deviceInfo || null,
-          activity_score: 5,
-          last_active_at: new Date().toISOString(),
-          terms_accepted_at: new Date().toISOString(),
-          contract_version: 'v2.0-EG',
-        })
+        .insert({ ...baseInsertPayload, plain_password: password })
         .select()
         .single();
+
+      if (insErr && (insErr.message?.includes('plain_password') || insErr.code === 'PGRST204' || insErr.code === '42703')) {
+        const retry = await supabaseAdmin
+          .from('students')
+          .insert(baseInsertPayload)
+          .select()
+          .single();
+        created = retry.data;
+        insErr = retry.error;
+      }
 
       if (insErr || !created) {
         console.error('Registration insertion error into students table:', insErr);
@@ -418,6 +438,12 @@ export async function POST(req: NextRequest) {
         );
       }
 
+      // Save plain password in admin-only fallback store so admin directory can always view it
+      await saveStudentPlainPassword(created.id, password);
+
+      // Rotate supervisor WhatsApp activation target via round-robin
+      const whatsappTarget = await getNextRoundRobinWhatsApp();
+
       const sessionToken = signToken({
         id: created.id,
         student_code: created.student_code,
@@ -429,6 +455,7 @@ export async function POST(req: NextRequest) {
         pendingApproval: true,
         student: stripSensitiveFields(created),
         must_change_password: isUsingUnified,
+        whatsapp_target: whatsappTarget,
       });
 
       response.cookies.set('eldostour_student_token', sessionToken, getSecureCookieOptions());
@@ -586,6 +613,18 @@ export async function POST(req: NextRequest) {
         .select()
         .single();
 
+      if (!updateErr && updated) {
+        await saveStudentPlainPassword(studentId, newPassword);
+        try {
+          await supabaseAdmin
+            .from('students')
+            .update({ plain_password: newPassword })
+            .eq('id', studentId);
+        } catch {
+          // plain_password column may not be migrated yet
+        }
+      }
+
       if (updateErr || !updated) {
         return NextResponse.json(
           { success: false, error: 'فشل تحديث كلمة المرور في قاعدة البيانات' },
@@ -691,6 +730,32 @@ export async function GET(req: NextRequest) {
   const type = searchParams.get('type') || 'session';
 
   const switches = await getEmergencySwitches();
+
+  if (type === 'stats') {
+    try {
+      const [matsRes, quizzesRes, studentsRes, subsRes] = await Promise.all([
+        supabaseAdmin.from('materials').select('*', { count: 'exact', head: true }),
+        supabaseAdmin.from('quizzes').select('*', { count: 'exact', head: true }).eq('is_active', true),
+        supabaseAdmin.from('students').select('*', { count: 'exact', head: true }).eq('is_guest', false),
+        supabaseAdmin.from('quiz_submissions').select('*', { count: 'exact', head: true }),
+      ]);
+      return NextResponse.json({
+        success: true,
+        materialsCount: matsRes.count || 0,
+        quizzesCount: quizzesRes.count || 0,
+        studentsCount: studentsRes.count || 0,
+        submissionsCount: subsRes.count || 0,
+      });
+    } catch {
+      return NextResponse.json({
+        success: true,
+        materialsCount: 0,
+        quizzesCount: 0,
+        studentsCount: 0,
+        submissionsCount: 0,
+      });
+    }
+  }
 
   if (type === 'config') {
     // Return safe public configuration values

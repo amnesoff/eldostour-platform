@@ -458,7 +458,7 @@ export function SubjectCoversManager({ subjects, onRefresh }: SubjectCoversManag
         </div>
 
         {/* Academic Year Switcher */}
-        <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-slate-950/80 border border-slate-800 overflow-x-auto">
+        <div className="flex flex-wrap items-center gap-1.5 p-1 rounded-2xl bg-slate-950/80 border border-slate-800">
           {ACADEMIC_YEARS.map((y) => (
             <button
               key={y.id}

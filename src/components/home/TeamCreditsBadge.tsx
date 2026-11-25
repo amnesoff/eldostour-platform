@@ -2,17 +2,11 @@
 
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Crown, Award, ShieldCheck, Users, X, Sparkles } from 'lucide-react';
-import { TEAM_CREDITS } from '@/lib/constants';
+import { Users, X, Sparkles } from 'lucide-react';
+import { TeamCreditsShowcase } from '@/components/home/TeamCreditsShowcase';
 
 export function TeamCreditsBadge() {
   const [isOpen, setIsOpen] = useState(false);
-
-  const iconMap: Record<string, React.ReactNode> = {
-    Crown: <Crown className="w-5 h-5 text-amber-500" />,
-    Award: <Award className="w-5 h-5 text-emerald-500" />,
-    ShieldCheck: <ShieldCheck className="w-5 h-5 text-blue-500" />,
-  };
 
   return (
     <>
@@ -24,13 +18,17 @@ export function TeamCreditsBadge() {
         <span className="flex items-center justify-center w-6 h-6 rounded-full bg-amber-500/20 text-amber-400 group-hover:scale-110 transition-transform">
           <Users className="w-3.5 h-3.5" />
         </span>
-        <div className="text-xs font-semibold flex items-center gap-1.5">
+        <div className="text-xs font-semibold flex flex-wrap items-center gap-1.5">
           <span className="text-amber-400">إشراف وتأسيس:</span>
-          <span>مازن شكري</span>
+          <span className="text-red-400 font-bold">مازن شكري</span>
           <span className="text-slate-500">•</span>
-          <span>رحمة علاء</span>
+          <span className="text-red-400 font-bold">رحمة علاء</span>
           <span className="text-slate-500">•</span>
-          <span>وليد محرم</span>
+          <span className="text-white">وليد محرم</span>
+          <span className="text-slate-500">•</span>
+          <span className="text-white">جواد</span>
+          <span className="text-slate-500">•</span>
+          <span className="text-amber-300 font-bold">ندى زيد</span>
         </div>
         <Sparkles className="w-3.5 h-3.5 text-amber-400 animate-pulse hidden sm:inline" />
       </button>
@@ -67,42 +65,18 @@ export function TeamCreditsBadge() {
                     فريق العمل والتأسيس
                   </h3>
                   <p className="text-xs text-amber-300/80">
-                    منصة الدستور التعليمية • كلية الحقوق
+                    منصة الدستور التعليمية • مبادرة طلابية مستقلة
                   </p>
                 </div>
               </div>
 
-              {/* Members List */}
-              <div className="space-y-3.5">
-                {TEAM_CREDITS.map((member) => (
-                  <div
-                    key={member.name}
-                    className="flex items-start gap-3.5 p-3.5 rounded-xl bg-white/5 border border-white/5 hover:border-amber-500/30 transition-colors"
-                  >
-                    <div className="p-2 rounded-xl bg-slate-800 border border-white/10 shrink-0 mt-0.5">
-                      {iconMap[member.iconName]}
-                    </div>
-                    <div className="flex-1">
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold text-sm sm:text-base text-white">
-                          {member.name}
-                        </span>
-                        <span className="text-[11px] font-semibold text-amber-400 bg-amber-400/10 px-2.5 py-0.5 rounded-full border border-amber-400/20">
-                          {member.role}
-                        </span>
-                      </div>
-                      <p className="text-xs text-slate-400 mt-1 leading-relaxed">
-                        {member.description}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
+              {/* Members Showcase */}
+              <TeamCreditsShowcase compact />
 
               {/* Footer Quote */}
               <div className="mt-6 pt-4 border-t border-white/10 text-center">
                 <p className="text-xs text-slate-400 italic">
-                  «العدل أساس الملك، والعلم سراج المستقبل — نعتز بخدمة طلاب كلية الحقوق»
+                  «العدل أساس الملك، والعلم سراج المستقبل — نعتز بخدمة طلاب العلوم القانونية»
                 </p>
               </div>
             </motion.div>

@@ -35,11 +35,11 @@ export function SubjectFilter({
           </span>
         </div>
 
-        <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
+        <div className="flex flex-wrap items-center gap-2 pb-1">
           {/* "الكل" button */}
           <button
             onClick={() => onSelectSubject('all')}
-            className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap transition-all border ${
+            className={`min-h-[44px] px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all border ${
               selectedSubjectId === 'all'
                 ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-md shadow-amber-500/20'
                 : 'bg-white/80 dark:bg-slate-900/80 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'

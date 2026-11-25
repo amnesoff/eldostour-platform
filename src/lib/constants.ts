@@ -1,7 +1,8 @@
-import { AcademicYearInfo, TeamMember, SiteSettings, SiteSection } from '@/types';
+import { AcademicYearInfo, TeamMember, SiteSettings, SiteSection, GranularPermissions, SupervisorWhatsAppEntry } from '@/types';
 
 export const PLATFORM_NAME = 'منصة الدستور التعليمية';
-export const COLLEGE_NAME = 'كلية الحقوق';
+export const COLLEGE_NAME = 'العلوم القانونية والحقوقية';
+export const INDEPENDENCE_DISCLAIMER = 'تنويه: المنصة مستقلة وغير تابعة للكلية';
 export const PLATFORM_SUBTITLE = 'البوابة الأكاديمية المستقلة الشاملة لطلاب القانون والعلوم الحقوقية';
 
 export const ACADEMIC_YEARS: AcademicYearInfo[] = [
@@ -41,35 +42,75 @@ export const ACADEMIC_YEARS: AcademicYearInfo[] = [
 
 export const TEAM_CREDITS: TeamMember[] = [
   {
-    role: 'صانع ومنشئ المنصة',
+    role: 'المؤسس',
     name: 'مازن شكري',
-    description: 'تطوير، تأسيس الرؤية الأكاديمية والتقنية الشاملة للمنصة',
+    description: 'المؤسس وصانع المنصة، تطوير الرؤية الأكاديمية والتقنية الشاملة',
     iconName: 'Crown',
   },
   {
-    role: 'مشرف عام',
+    role: 'المشرف العام',
     name: 'رحمة علاء',
-    description: 'الإشراف العام وتنسيق المادة القانونية وإدارة المحتوى الأكاديمي',
+    description: 'المشرف العام وتنسيق المادة القانونية وإدارة المحتوى الأكاديمي',
     iconName: 'Award',
   },
   {
     role: 'مشرف إداري',
     name: 'وليد محرم',
-    description: 'الإشراف الإداري ومتابعة الشؤون الطلابية والتواصل الجامعي',
+    description: 'المشرف الإداري ومتابعة الشؤون الطلابية والتنظيمية',
     iconName: 'ShieldCheck',
+  },
+  {
+    role: 'مشرف إداري',
+    name: 'جواد',
+    description: 'المشرف الإداري ومتابعة الدعم الفني وتفعيل حسابات الطلاب',
+    iconName: 'ShieldCheck',
+  },
+  {
+    role: 'مشرف عام',
+    name: 'ندى زيد',
+    description: 'المشرف العام ومتابعة الجودة الأكاديمية وتنسيق الفرق الدراسية',
+    iconName: 'Award',
   },
 ];
 
-export const LEADERSHIP_BAR_TEXT = 'إشراف وتأسيس: مازن شكري • رحمة علاء • وليد محرم';
+export const LEADERSHIP_BAR_TEXT = 'إشراف وتأسيس: مازن شكري • رحمة علاء • وليد محرم • جواد • ندى زيد';
+
+export const DEFAULT_SUPERVISOR_WHATSAPP_LIST: SupervisorWhatsAppEntry[] = [
+  { name: 'مازن شكري', role: 'المؤسس', phone: '201122144007', enabled: true },
+  { name: 'رحمة علاء', role: 'المشرف العام', phone: '', enabled: true },
+  { name: 'وليد محرم', role: 'مشرف إداري', phone: '', enabled: true },
+  { name: 'جواد', role: 'مشرف إداري', phone: '', enabled: true },
+  { name: 'ندى زيد', role: 'مشرف عام', phone: '', enabled: true },
+];
+
+export const DEFAULT_GRANULAR_PERMISSIONS: GranularPermissions = {
+  materials: { view: true, add: true, edit: true, delete: false, bundles: true },
+  quizzes: { view: true, create: true, edit: true, delete: false, results: true },
+  stories: { view: true, add: true, edit: true, delete: false },
+  students: { view: false, approve: false, edit_password: false, delete_ban: false },
+  news_cms: { view: false, publish_news: false, switch_themes: false, edit_french_countdown: false, edit_whatsapp: false },
+  requests_reports: { view: true, resolve_reports: true, respond_requests: true },
+  security_backups: { view: false, manage_security: false, download_backup: false },
+};
+
+export const FOUNDER_FULL_PERMISSIONS: GranularPermissions = {
+  materials: { view: true, add: true, edit: true, delete: true, bundles: true },
+  quizzes: { view: true, create: true, edit: true, delete: true, results: true },
+  stories: { view: true, add: true, edit: true, delete: true },
+  students: { view: true, approve: true, edit_password: true, delete_ban: true },
+  news_cms: { view: true, publish_news: true, switch_themes: true, edit_french_countdown: true, edit_whatsapp: true },
+  requests_reports: { view: true, resolve_reports: true, respond_requests: true },
+  security_backups: { view: true, manage_security: true, download_backup: true },
+};
 
 export const DEFAULT_SITE_SETTINGS: SiteSettings = {
-  college_name: 'كلية الحقوق',
+  college_name: 'منصة مستقلة للعلوم القانونية',
   platform_name: 'منصة الدستور التعليمية',
   hero_title: 'منصة الدستور التعليمية',
-  hero_subtitle: 'البوابة الأكاديمية المتكاملة للعلوم القانونية ومحاضرات الحقوق',
+  hero_subtitle: 'البوابة الأكاديمية المستقلة للعلوم القانونية ومحاضرات الحقوق',
   leadership_text: LEADERSHIP_BAR_TEXT,
   active_occasion_theme: 'default',
-  whatsapp_number: '201000000000',
+  whatsapp_number: '201122144007',
   whatsapp_message: 'مرحباً، أود الاستفسار عن محاضرات وخدمات منصة الدستور التعليمية',
   whatsapp_enabled: true,
   social_facebook: 'https://facebook.com',
@@ -142,7 +183,7 @@ export const DEFAULT_CHARACTER_WIDGET_SETTINGS = {
     { id: '2', text: 'يا ترى الحب وسنينه ولا القانون ومواده؟ 😂', is_active: true },
     { id: '3', text: 'الامتحانات على الأبواب.. شد حيلك يا بطل! ⚖️', is_active: true },
     { id: '4', text: 'القانون لا يحمي المغفلين.. افتح كتابك وذاكر! 📜', is_active: true },
-    { id: '5', text: 'كلية الحقوق مش سهلة بس أنت قدها 💪', is_active: true },
+    { id: '5', text: 'دراسة القانون مش سهلة بس أنت قدها 💪', is_active: true },
     { id: '6', text: 'الدكتور بيجيب من بين السطور.. ركّز! 🔍', is_active: true },
     { id: '7', text: 'فنجان قهوة وكتاب مدني، وخلي الباقي على الله ☕', is_active: true },
   ],

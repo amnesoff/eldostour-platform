@@ -44,7 +44,8 @@ import {
   adminResetAllStudentPasswords,
 } from '@/lib/apiClient';
 import { hashSha256, logAdminSecurityEvent } from '@/lib/authUtils';
-import { SubAdminUser, AdminSecurityLog, AdminSecuritySettings } from '@/types';
+import { DEFAULT_GRANULAR_PERMISSIONS, DEFAULT_SUPERVISOR_WHATSAPP_LIST } from '@/lib/constants';
+import { SubAdminUser, AdminSecurityLog, AdminSecuritySettings, GranularPermissions, SupervisorWhatsAppEntry } from '@/types';
 
 interface SecurityCenterManagerProps {
   onRefresh?: () => void;
@@ -103,10 +104,12 @@ export function SecurityCenterManager({ onRefresh }: SecurityCenterManagerProps)
   const [canManageContent, setCanManageContent] = useState(true);
   const [canDeleteContent, setCanDeleteContent] = useState(false);
   const [canAccessStudentVault, setCanAccessStudentVault] = useState(false);
+  const [granularPerms, setGranularPerms] = useState<GranularPermissions>(DEFAULT_GRANULAR_PERMISSIONS);
   const [isSavingSubAdmin, setIsSavingSubAdmin] = useState(false);
 
-  // WhatsApp Approval Number
-  const [whatsappApprovalNumber, setWhatsappApprovalNumber] = useState('');
+  // WhatsApp Approval Numbers (Round-Robin)
+  const [whatsappApprovalNumber, setWhatsappApprovalNumber] = useState('201122144007');
+  const [whatsappSupervisors, setWhatsappSupervisors] = useState<SupervisorWhatsAppEntry[]>(DEFAULT_SUPERVISOR_WHATSAPP_LIST);
   const [isSavingWhatsApp, setIsSavingWhatsApp] = useState(false);
 
   // Dynamic Secret Portals
@@ -146,7 +149,10 @@ export function SecurityCenterManager({ onRefresh }: SecurityCenterManagerProps)
         const s = secRes.securitySettings as AdminSecuritySettings;
         setSecuritySettings(s);
         setNewSuperUsername(s.admin_username || '');
-        setWhatsappApprovalNumber(s.whatsapp_approval_number || '');
+        setWhatsappApprovalNumber(s.whatsapp_approval_number || '201122144007');
+        if (Array.isArray((s as any).whatsapp_supervisors) && (s as any).whatsapp_supervisors.length > 0) {
+          setWhatsappSupervisors((s as any).whatsapp_supervisors);
+        }
         setSuperAdminSlug(s.super_admin_slug || 'command-mazen');
         setSuperAdminKey(s.super_admin_key || 'dustour2006');
         setStaffPortalSlug(s.staff_portal_slug || 'staff-portal');
@@ -386,19 +392,27 @@ export function SecurityCenterManager({ onRefresh }: SecurityCenterManagerProps)
     }
   };
 
-  // Save WhatsApp Approval Number
+  // Save WhatsApp Approval Numbers (Round-Robin)
   const handleSaveWhatsAppApprovalNumber = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSavingWhatsApp(true);
     try {
-      const cleanPhone = whatsappApprovalNumber.replace(/\D/g, '');
-      await adminUpdateSecuritySettings({ whatsapp_approval_number: cleanPhone });
+      const cleanedList = whatsappSupervisors.map((item) => ({
+        ...item,
+        phone: item.phone.replace(/\D/g, ''),
+      }));
+      const primaryNum = cleanedList[0]?.phone || whatsappApprovalNumber.replace(/\D/g, '') || '201122144007';
+      await adminUpdateSecuritySettings({
+        whatsapp_approval_number: primaryNum,
+        whatsapp_supervisors: cleanedList,
+      });
 
-      setSecuritySettings((prev) => (prev ? { ...prev, whatsapp_approval_number: cleanPhone } : null));
-      setSuccessMsg('تم حفظ رقم واتساب اعتماد طلبات الطلاب بنجاح! 📱');
+      setWhatsappSupervisors(cleanedList);
+      setSecuritySettings((prev) => (prev ? { ...prev, whatsapp_approval_number: primaryNum } : null));
+      setSuccessMsg('تم حفظ أرقام واتساب اعتماد الطلبة والتناوب التلقائي (Round-Robin) بنجاح! 📱');
       setTimeout(() => setSuccessMsg(''), 4000);
     } catch {
-      setErrorMsg('فشل حفظ رقم الواتساب');
+      setErrorMsg('فشل حفظ أرقام الواتساب');
     } finally {
       setIsSavingWhatsApp(false);
     }
@@ -516,6 +530,19 @@ export function SecurityCenterManager({ onRefresh }: SecurityCenterManagerProps)
     }
   };
 
+  const toggleGranular = <K extends keyof GranularPermissions>(
+    cat: K,
+    key: keyof GranularPermissions[K]
+  ) => {
+    setGranularPerms((prev) => ({
+      ...prev,
+      [cat]: {
+        ...prev[cat],
+        [key]: !prev[cat][key],
+      },
+    }));
+  };
+
   // Open Sub-Admin Create/Edit Modal
   const handleOpenSubAdminModal = (user?: SubAdminUser) => {
     if (user) {
@@ -527,6 +554,24 @@ export function SecurityCenterManager({ onRefresh }: SecurityCenterManagerProps)
       setCanManageContent(user.can_manage_content);
       setCanDeleteContent(user.can_delete_content);
       setCanAccessStudentVault(user.can_access_student_vault);
+      setGranularPerms(
+        user.granular_permissions || {
+          ...DEFAULT_GRANULAR_PERMISSIONS,
+          materials: {
+            view: user.can_manage_content,
+            add: user.can_manage_content,
+            edit: user.can_manage_content,
+            delete: user.can_delete_content,
+            bundles: user.can_manage_content,
+          },
+          students: {
+            view: user.can_manage_students,
+            approve: user.can_manage_students,
+            edit_password: user.can_manage_students,
+            delete_ban: user.can_manage_students && user.can_delete_content,
+          },
+        }
+      );
     } else {
       setEditingSubAdmin(null);
       setSubUsername('');
@@ -536,6 +581,7 @@ export function SecurityCenterManager({ onRefresh }: SecurityCenterManagerProps)
       setCanManageContent(true);
       setCanDeleteContent(false);
       setCanAccessStudentVault(false);
+      setGranularPerms(DEFAULT_GRANULAR_PERMISSIONS);
     }
     setIsSubAdminModalOpen(true);
   };
@@ -545,6 +591,13 @@ export function SecurityCenterManager({ onRefresh }: SecurityCenterManagerProps)
     e.preventDefault();
     if (!subUsername.trim()) return;
     setIsSavingSubAdmin(true);
+
+    const derivedManageStudents = granularPerms.students.view;
+    const derivedManageContent =
+      granularPerms.materials.view || granularPerms.quizzes.view || granularPerms.stories.view || granularPerms.news_cms.view;
+    const derivedDeleteContent =
+      granularPerms.materials.delete || granularPerms.quizzes.delete || granularPerms.stories.delete;
+    const derivedVault = granularPerms.students.view;
 
     try {
       if (subPin.trim() && !/^\d{6}$/.test(subPin.trim())) {
@@ -559,13 +612,14 @@ export function SecurityCenterManager({ onRefresh }: SecurityCenterManagerProps)
           username: subUsername.trim(),
           password: subPassword.trim() || undefined,
           pin: subPin.trim() || undefined,
-          can_manage_students: canManageStudents,
-          can_manage_content: canManageContent,
-          can_delete_content: canDeleteContent,
-          can_access_student_vault: canAccessStudentVault,
+          can_manage_students: derivedManageStudents,
+          can_manage_content: derivedManageContent,
+          can_delete_content: derivedDeleteContent,
+          can_access_student_vault: derivedVault,
+          granular_permissions: granularPerms,
         });
         if (!res.success) throw new Error(res.error || 'فشل تحديث بيانات المشرف');
-        setSuccessMsg(`تم تحديث بيانات المشرف (${subUsername.trim()}) بنجاح!`);
+        setSuccessMsg(`تم تحديث بيانات وصلاحيات المشرف (${subUsername.trim()}) بنجاح!`);
       } else {
         if (!subPassword.trim() || !subPin.trim()) {
           setErrorMsg('كلمة المرور ورمز الـ PIN مطلوبان للمشرف الجديد');
@@ -576,10 +630,11 @@ export function SecurityCenterManager({ onRefresh }: SecurityCenterManagerProps)
           username: subUsername.trim(),
           password: subPassword.trim(),
           pin: subPin.trim(),
-          can_manage_students: canManageStudents,
-          can_manage_content: canManageContent,
-          can_delete_content: canDeleteContent,
-          can_access_student_vault: canAccessStudentVault,
+          can_manage_students: derivedManageStudents,
+          can_manage_content: derivedManageContent,
+          can_delete_content: derivedDeleteContent,
+          can_access_student_vault: derivedVault,
+          granular_permissions: granularPerms,
         });
         if (!res.success) throw new Error(res.error || 'فشل إنشاء حساب المشرف');
         setSuccessMsg(`تم إنشاء حساب المشرف (${subUsername.trim()}) بنجاح!`);
@@ -939,7 +994,7 @@ export function SecurityCenterManager({ onRefresh }: SecurityCenterManagerProps)
 
       {/* WHATSAPP APPROVAL NUMBER & RECOVERY CODES */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* WhatsApp Approval Number */}
+        {/* WhatsApp Approval Numbers (Round-Robin Rotation) */}
         <div className="p-6 rounded-3xl bg-slate-900/90 border border-slate-800 shadow-xl flex flex-col justify-between">
           <div>
             <div className="flex items-center gap-2.5 mb-3">
@@ -947,30 +1002,57 @@ export function SecurityCenterManager({ onRefresh }: SecurityCenterManagerProps)
                 <Phone className="w-5 h-5" />
               </div>
               <div>
-                <h3 className="text-sm font-black text-white">رقم واتساب اعتماد الطلبة 📱</h3>
-                <span className="text-xs text-slate-400">WhatsApp Approval Number</span>
+                <h3 className="text-sm font-black text-white">أرقام واتساب اعتماد الطلبة (توزيع تلقائي) 📱</h3>
+                <span className="text-xs text-slate-400">Round-Robin Supervisor WhatsApp</span>
               </div>
             </div>
 
-            <p className="text-xs text-slate-400 leading-relaxed mb-4">
-              الرقم المخصص لاستلام رسائل الطلاب التلقائية لاعتماد حساباتهم وتفعيل الكارنيهات بعد التسجيل مباشرة.
+            <p className="text-xs text-slate-400 leading-relaxed mb-3">
+              يتم التبديل تلقائياً بالتناوب (Round-Robin) بين أرقام المشرفين المفعّلة عند تسجيل كل طالب جديد.
             </p>
 
-            <form onSubmit={handleSaveWhatsAppApprovalNumber} className="space-y-3">
-              <input
-                type="text"
-                value={whatsappApprovalNumber}
-                onChange={(e) => setWhatsappApprovalNumber(e.target.value)}
-                placeholder="مثال: 201000000000 أو 01012345678"
-                dir="ltr"
-                className="w-full h-11 px-3.5 rounded-xl bg-slate-950 border border-slate-700 focus:border-emerald-400 text-emerald-400 font-mono font-bold text-sm outline-none text-right"
-              />
+            <form onSubmit={handleSaveWhatsAppApprovalNumber} className="space-y-2.5">
+              <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                {whatsappSupervisors.map((sup, idx) => (
+                  <div
+                    key={sup.name}
+                    className="flex items-center gap-2 p-2 rounded-xl bg-slate-950/80 border border-slate-800"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={sup.enabled !== false}
+                      onChange={(e) =>
+                        setWhatsappSupervisors((prev) =>
+                          prev.map((item, i) => (i === idx ? { ...item, enabled: e.target.checked } : item))
+                        )
+                      }
+                      className="rounded border-slate-700 text-emerald-500 focus:ring-0 shrink-0"
+                    />
+                    <div className="min-w-[85px] text-right">
+                      <span className="block text-[11px] font-bold text-white">{sup.name}</span>
+                      <span className="block text-[9px] text-amber-400">{sup.role}</span>
+                    </div>
+                    <input
+                      type="text"
+                      value={sup.phone}
+                      onChange={(e) =>
+                        setWhatsappSupervisors((prev) =>
+                          prev.map((item, i) => (i === idx ? { ...item, phone: e.target.value } : item))
+                        )
+                      }
+                      placeholder="201xxxxxxxxx"
+                      dir="ltr"
+                      className="flex-1 h-9 px-2.5 rounded-lg bg-slate-900 border border-slate-700 focus:border-emerald-400 text-emerald-400 font-mono font-bold text-xs outline-none text-right"
+                    />
+                  </div>
+                ))}
+              </div>
               <button
                 type="submit"
                 disabled={isSavingWhatsApp}
                 className="w-full h-10 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-md transition-all active:scale-95 cursor-pointer disabled:opacity-50"
               >
-                {isSavingWhatsApp ? 'جارٍ الحفظ...' : 'حفظ رقم واتساب الاعتماد 💾'}
+                {isSavingWhatsApp ? 'جارٍ الحفظ...' : 'حفظ أرقام التناوب التلقائي 💾'}
               </button>
             </form>
           </div>
@@ -1364,17 +1446,34 @@ export function SecurityCenterManager({ onRefresh }: SecurityCenterManagerProps)
         </div>
       )}
 
-      {/* MODAL 2: CREATE / EDIT SUB-ADMIN */}
+      {/* MODAL 2: CREATE / EDIT SUB-ADMIN WITH GRANULAR PERMISSIONS MATRIX */}
       {isSubAdminModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md" dir="rtl">
-          <div className="relative w-full max-w-md bg-slate-900 border border-slate-700 rounded-3xl p-6 shadow-2xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/85 backdrop-blur-md" dir="rtl">
+          <div className="relative w-[95vw] sm:w-full max-w-2xl max-h-[90dvh] overflow-y-auto bg-slate-900 border border-slate-700 rounded-3xl p-5 sm:p-6 shadow-2xl">
             <h3 className="text-base font-black text-white flex items-center gap-2 mb-1">
               <UserPlus className="w-5 h-5 text-amber-400" />
-              <span>{editingSubAdmin ? 'تعديل بيانات المشرف وصلاحياته' : 'إضافة مشرف فرعي جديد'}</span>
+              <span>{editingSubAdmin ? 'تعديل بيانات المشرف وصلاحياته الدقيقة' : 'إضافة مشرف جديد وتحديد صلاحياته'}</span>
             </h3>
-            <p className="text-xs text-slate-400 mb-5">
-              حدد اسم المشرف وكلمة مروره وكود الـ PIN بالإضافة إلى صلاحيات الوصول الممنوحة له.
+            <p className="text-xs text-slate-400 mb-4">
+              اختر اسم المشرف وحدد بدقة التبويبات والأزرار المسموح له بالوصول إليها (✓). أي صلاحية غير محددة تُحجب تماماً من الواجهة والخادم.
             </p>
+
+            {/* Quick Supervisor Presets */}
+            {!editingSubAdmin && (
+              <div className="mb-4 flex flex-wrap items-center gap-1.5">
+                <span className="text-[11px] text-slate-400 ml-1">تعبئة سريعة:</span>
+                {['رحمة علاء', 'وليد محرم', 'جواد', 'ندى زيد'].map((presetName) => (
+                  <button
+                    key={presetName}
+                    type="button"
+                    onClick={() => setSubUsername(presetName)}
+                    className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-amber-500/20 border border-slate-700 hover:border-amber-500/40 text-xs font-bold text-amber-300 cursor-pointer"
+                  >
+                    {presetName}
+                  </button>
+                ))}
+              </div>
+            )}
 
             <form onSubmit={handleSaveSubAdmin} className="space-y-4">
               <div>
@@ -1419,49 +1518,143 @@ export function SecurityCenterManager({ onRefresh }: SecurityCenterManagerProps)
                 />
               </div>
 
-              {/* Granular Permissions Checkboxes */}
-              <div className="pt-2 border-t border-slate-800 space-y-2">
-                <span className="block text-xs font-bold text-amber-400 mb-2">صلاحيات المشرف:</span>
+              {/* Granular Sub-Tab & Feature Permissions Matrix (Checkboxes ✓) */}
+              <div className="pt-3 border-t border-slate-800 space-y-3">
+                <span className="block text-xs font-black text-amber-400">
+                  مصفوفة الصلاحيات الدقيقة (التبويبات والميزات الفرعية ✓):
+                </span>
 
-                <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={canManageContent}
-                    onChange={(e) => setCanManageContent(e.target.checked)}
-                    className="rounded border-slate-700 text-amber-500 focus:ring-0"
-                  />
-                  <span>رفع وإدارة المحاضرات والملخصات والأغلفة</span>
-                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {/* 1. Lectures & Materials */}
+                  <div className="p-3 rounded-2xl bg-slate-950/70 border border-slate-800 space-y-1.5">
+                    <span className="block text-xs font-bold text-amber-300 mb-1">1. المحاضرات والملفات</span>
+                    {[
+                      { k: 'view', label: 'عرض القسم ✓' },
+                      { k: 'add', label: 'إضافة محاضرة / ملف' },
+                      { k: 'edit', label: 'تعديل محاضرة / ملف' },
+                      { k: 'delete', label: 'حذف محاضرة / ملف ⚠️' },
+                      { k: 'bundles', label: 'إدارة الحزم والأغلفة والمواد' },
+                    ].map((item) => (
+                      <label key={item.k} className="flex items-center gap-2 text-[11px] text-slate-300 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(granularPerms.materials[item.k as keyof GranularPermissions['materials']])}
+                          onChange={() => toggleGranular('materials', item.k as keyof GranularPermissions['materials'])}
+                          className="rounded border-slate-700 text-amber-500 focus:ring-0"
+                        />
+                        <span>{item.label}</span>
+                      </label>
+                    ))}
+                  </div>
 
-                <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={canDeleteContent}
-                    onChange={(e) => setCanDeleteContent(e.target.checked)}
-                    className="rounded border-slate-700 text-red-500 focus:ring-0"
-                  />
-                  <span className="text-red-300">صلاحية حذف المحاضرات والمذكرات</span>
-                </label>
+                  {/* 2. Quizzes */}
+                  <div className="p-3 rounded-2xl bg-slate-950/70 border border-slate-800 space-y-1.5">
+                    <span className="block text-xs font-bold text-emerald-300 mb-1">2. الامتحانات والكويزات</span>
+                    {[
+                      { k: 'view', label: 'عرض القسم ✓' },
+                      { k: 'create', label: 'إنشاء اختبار جديد' },
+                      { k: 'edit', label: 'تعديل الأسئلة والاختبارات' },
+                      { k: 'delete', label: 'حذف اختبار ⚠️' },
+                      { k: 'results', label: 'عرض نتائج وتكريم الطلاب' },
+                    ].map((item) => (
+                      <label key={item.k} className="flex items-center gap-2 text-[11px] text-slate-300 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(granularPerms.quizzes[item.k as keyof GranularPermissions['quizzes']])}
+                          onChange={() => toggleGranular('quizzes', item.k as keyof GranularPermissions['quizzes'])}
+                          className="rounded border-slate-700 text-emerald-500 focus:ring-0"
+                        />
+                        <span>{item.label}</span>
+                      </label>
+                    ))}
+                  </div>
 
-                <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={canManageStudents}
-                    onChange={(e) => setCanManageStudents(e.target.checked)}
-                    className="rounded border-slate-700 text-emerald-500 focus:ring-0"
-                  />
-                  <span>عرض وتعديل واعتماد حسابات الطلاب</span>
-                </label>
+                  {/* 3. Legal Stories */}
+                  <div className="p-3 rounded-2xl bg-slate-950/70 border border-slate-800 space-y-1.5">
+                    <span className="block text-xs font-bold text-pink-300 mb-1">3. الستوري والحالات القانونية</span>
+                    {[
+                      { k: 'view', label: 'عرض القسم ✓' },
+                      { k: 'add', label: 'إضافة ستوري جديدة' },
+                      { k: 'edit', label: 'تعديل / تثبيت ستوري' },
+                      { k: 'delete', label: 'حذف ستوري ⚠️' },
+                    ].map((item) => (
+                      <label key={item.k} className="flex items-center gap-2 text-[11px] text-slate-300 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(granularPerms.stories[item.k as keyof GranularPermissions['stories']])}
+                          onChange={() => toggleGranular('stories', item.k as keyof GranularPermissions['stories'])}
+                          className="rounded border-slate-700 text-pink-500 focus:ring-0"
+                        />
+                        <span>{item.label}</span>
+                      </label>
+                    ))}
+                  </div>
 
-                <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={canAccessStudentVault}
-                    onChange={(e) => setCanAccessStudentVault(e.target.checked)}
-                    className="rounded border-slate-700 text-purple-500 focus:ring-0"
-                  />
-                  <span className="text-purple-300">صلاحية فتح خزنة بيانات الطلاب المشفرة</span>
-                </label>
+                  {/* 4. Students Directory */}
+                  <div className="p-3 rounded-2xl bg-slate-950/70 border border-slate-800 space-y-1.5">
+                    <span className="block text-xs font-bold text-blue-300 mb-1">4. سجل الطلاب والتفعيل</span>
+                    {[
+                      { k: 'view', label: 'عرض سجل الطلاب والخزنة ✓' },
+                      { k: 'approve', label: 'اعتماد وتفعيل الطلاب' },
+                      { k: 'edit_password', label: 'تعديل / تغيير كلمة المرور' },
+                      { k: 'delete_ban', label: 'حذف أو حظر طالب ⚠️' },
+                    ].map((item) => (
+                      <label key={item.k} className="flex items-center gap-2 text-[11px] text-slate-300 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(granularPerms.students[item.k as keyof GranularPermissions['students']])}
+                          onChange={() => toggleGranular('students', item.k as keyof GranularPermissions['students'])}
+                          className="rounded border-slate-700 text-blue-500 focus:ring-0"
+                        />
+                        <span>{item.label}</span>
+                      </label>
+                    ))}
+                  </div>
+
+                  {/* 5. News & CMS */}
+                  <div className="p-3 rounded-2xl bg-slate-950/70 border border-slate-800 space-y-1.5">
+                    <span className="block text-xs font-bold text-purple-300 mb-1">5. الأخبار والإعدادات والثيمات</span>
+                    {[
+                      { k: 'view', label: 'عرض قسم الإعدادات ✓' },
+                      { k: 'publish_news', label: 'نشر أخبار وإعلانات عاجلة' },
+                      { k: 'switch_themes', label: 'تبديل الثيمات والشخصية (CMS)' },
+                      { k: 'edit_french_countdown', label: 'القاموس الفرنسي والعد التنازلي' },
+                      { k: 'edit_whatsapp', label: 'تعديل أرقام الواتساب' },
+                    ].map((item) => (
+                      <label key={item.k} className="flex items-center gap-2 text-[11px] text-slate-300 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(granularPerms.news_cms[item.k as keyof GranularPermissions['news_cms']])}
+                          onChange={() => toggleGranular('news_cms', item.k as keyof GranularPermissions['news_cms'])}
+                          className="rounded border-slate-700 text-purple-500 focus:ring-0"
+                        />
+                        <span>{item.label}</span>
+                      </label>
+                    ))}
+                  </div>
+
+                  {/* 6. Requests & Reports + Security & Backups */}
+                  <div className="p-3 rounded-2xl bg-slate-950/70 border border-slate-800 space-y-1.5">
+                    <span className="block text-xs font-bold text-orange-300 mb-1">6. البلاغات والطلبات والأمان</span>
+                    {[
+                      { cat: 'requests_reports' as const, k: 'view', label: 'عرض البلاغات والطلبات ✓' },
+                      { cat: 'requests_reports' as const, k: 'resolve_reports', label: 'معالجة بلاغات الأخطاء' },
+                      { cat: 'requests_reports' as const, k: 'respond_requests', label: 'الرد على طلبات الطلاب' },
+                      { cat: 'security_backups' as const, k: 'view', label: 'عرض مركز الأمان (للمؤسس افتراضياً) 🔒' },
+                      { cat: 'security_backups' as const, k: 'download_backup', label: 'تحميل النسخة الاحتياطية 🔒' },
+                    ].map((item) => (
+                      <label key={`${item.cat}-${item.k}`} className="flex items-center gap-2 text-[11px] text-slate-300 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={Boolean((granularPerms[item.cat] as any)[item.k])}
+                          onChange={() => toggleGranular(item.cat, item.k as any)}
+                          className="rounded border-slate-700 text-orange-500 focus:ring-0"
+                        />
+                        <span>{item.label}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
               </div>
 
               <div className="mt-6 flex items-center gap-3">

@@ -32,7 +32,9 @@ import { StudentRequestModal } from '@/components/home/StudentRequestModal';
 import { PostActivationCelebration } from '@/components/auth/PostActivationCelebration';
 import { LivePresenceBadge } from '@/components/tools/LivePresenceBadge';
 import { GradeLeaderboard } from '@/components/quiz/GradeLeaderboard';
-import { ACADEMIC_YEARS, COLLEGE_NAME, DEFAULT_SITE_SETTINGS } from '@/lib/constants';
+import { PlatformStatsBar } from '@/components/home/PlatformStatsBar';
+import { TeamCreditsShowcase } from '@/components/home/TeamCreditsShowcase';
+import { ACADEMIC_YEARS, COLLEGE_NAME, DEFAULT_SITE_SETTINGS, INDEPENDENCE_DISCLAIMER } from '@/lib/constants';
 import { SiteSettings } from '@/types';
 import { supabase } from '@/lib/supabase';
 import { useTheme } from '@/context/ThemeContext';
@@ -223,7 +225,7 @@ export default function StudentPortalClient() {
         {/* HERO SECTION */}
         <section className="relative pt-8 pb-10 sm:pt-14 sm:pb-16 overflow-hidden text-center">
           <div className="max-w-5xl mx-auto px-4 sm:px-6 relative z-10">
-            {/* College Badge & Live Studying Presence Counter */}
+            {/* Independence Badge & Live Studying Presence Counter */}
             <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3 mb-4">
               <motion.div
                 initial={{ opacity: 0, y: 10 }}
@@ -231,7 +233,7 @@ export default function StudentPortalClient() {
                 className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 text-xs sm:text-sm font-bold shadow-sm"
               >
                 <Scale className="w-4 h-4" />
-                <span>{settings.college_name || COLLEGE_NAME}</span>
+                <span>{INDEPENDENCE_DISCLAIMER}</span>
                 <Sparkles className="w-3.5 h-3.5 text-amber-500" />
               </motion.div>
               <LivePresenceBadge />
@@ -292,6 +294,9 @@ export default function StudentPortalClient() {
             </motion.div>
           </div>
         </section>
+
+        {/* LIVE PLATFORM STATISTICS BAR */}
+        <PlatformStatsBar />
 
         {/* EXAM COUNTDOWN */}
         <ExamCountdown />
@@ -407,6 +412,11 @@ export default function StudentPortalClient() {
         {/* GRADE LEADERBOARD (لوحة الشرف والأوائل 🏆) */}
         <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <GradeLeaderboard />
+        </section>
+
+        {/* TEAM LEADERSHIP SHOWCASE */}
+        <section className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+          <TeamCreditsShowcase />
         </section>
 
         {/* 30 GOLDEN FEATURES: DAILY MAXIM & CHALLENGE */}

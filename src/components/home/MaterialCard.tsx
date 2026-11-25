@@ -89,7 +89,7 @@ export function MaterialCard({
     if (isDownloading) return;
     setIsDownloading(true);
     try {
-      const studentName = localStorage.getItem('eldostour_student_name') || 'طالب كلية الحقوق';
+      const studentName = localStorage.getItem('eldostour_student_name') || 'طالب العلوم القانونية';
       const studentCode = localStorage.getItem('eldostour_student_id_num') || 'DST-LAW';
       await downloadDirectWatermarkedPdf(material.file_url, material.title, {
         name: studentName,

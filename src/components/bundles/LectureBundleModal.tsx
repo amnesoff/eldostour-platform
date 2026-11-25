@@ -60,7 +60,7 @@ export function LectureBundleModal({
     }
 
     // Load student name for watermark (Feature #8)
-    const name = localStorage.getItem('eldostour_student_name') || 'طالب كلية الحقوق';
+    const name = localStorage.getItem('eldostour_student_name') || 'طالب العلوم القانونية';
     const studentId = localStorage.getItem('eldostour_student_id_num') || 'DST-LAW';
     setStudentWatermark(`${name} • ${studentId} • منصة الدستور`);
 
@@ -233,8 +233,8 @@ export function LectureBundleModal({
             </button>
           </div>
 
-          {/* 4 DISTINCT TABS HEADER (Part 1.2) */}
-          <div className="flex items-center gap-2 overflow-x-auto py-2.5 border-b border-slate-200 dark:border-slate-800 shrink-0 text-xs font-bold">
+          {/* 4 DISTINCT TABS HEADER (Wrapped, No Horizontal Swipe) */}
+          <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 py-2.5 border-b border-slate-200 dark:border-slate-800 shrink-0 text-xs font-bold">
             {/* Tab 1: Video */}
             <button
               onClick={() => setActiveTab('video')}

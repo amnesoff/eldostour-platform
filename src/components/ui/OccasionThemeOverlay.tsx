@@ -341,7 +341,7 @@ export function OccasionThemeOverlay({ theme }: OccasionThemeOverlayProps) {
                 <div className="flex-1 min-w-0">
                   <span className="text-xs font-bold text-sky-400 block">عام ميلادي سعيد ❄️</span>
                   <h4 className="text-sm sm:text-base font-black text-white">
-                    كل عام وجميع طلاب كلية الحقوق بخير
+                    كل عام وجميع طلاب العلوم القانونية بخير
                   </h4>
                   <p className="text-xs text-slate-300 mt-0.5">
                     نتمنى لكم سنة دراسية عامرة بالامتياز والنجاح المستمر.

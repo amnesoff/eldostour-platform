@@ -235,6 +235,13 @@ export async function adminDeleteStudent(studentId: string) {
   });
 }
 
+export async function adminCleanStudentEmails() {
+  return adminFetch('/api/admin/db', {
+    method: 'POST',
+    body: JSON.stringify({ action: 'clean_student_emails' }),
+  });
+}
+
 // -----------------------------------------------------------------
 // STUDENT API CALLS (/api/auth/student)
 // -----------------------------------------------------------------

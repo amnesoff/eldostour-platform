@@ -2,19 +2,14 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
-import { Crown, Award, ShieldCheck, Scale, Heart, MessageCircle, Send, AlertCircle } from 'lucide-react';
+import { Scale, Heart, MessageCircle, Send, AlertCircle } from 'lucide-react';
 import { AnimatedLogo } from '@/components/ui/AnimatedLogo';
-import { ACADEMIC_YEARS, TEAM_CREDITS, PLATFORM_NAME } from '@/lib/constants';
+import { ACADEMIC_YEARS, PLATFORM_NAME, INDEPENDENCE_DISCLAIMER } from '@/lib/constants';
 import { LegalContractModal } from '@/components/legal/LegalContractModal';
+import { TeamCreditsShowcase } from '@/components/home/TeamCreditsShowcase';
 
 export function Footer() {
   const [isContractOpen, setIsContractOpen] = useState(false);
-
-  const iconMap: Record<string, React.ReactNode> = {
-    Crown: <Crown className="w-4 h-4 text-amber-500" />,
-    Award: <Award className="w-4 h-4 text-emerald-500" />,
-    ShieldCheck: <ShieldCheck className="w-4 h-4 text-blue-500" />,
-  };
 
   return (
     <>
@@ -110,42 +105,23 @@ export function Footer() {
               </ul>
             </div>
 
-            {/* Col 3: Prominent Team Credits */}
-            <div className="md:col-span-4 space-y-3">
+            {/* Col 3: Prominent Team Credits Showcase */}
+            <div className="md:col-span-5 space-y-3">
               <h4 className="text-sm font-bold text-white uppercase tracking-wider border-r-2 border-amber-500 pr-2">
                 فريق القيادة والتأسيس
               </h4>
-              <div className="space-y-2.5">
-                {TEAM_CREDITS.map((member) => (
-                  <div
-                    key={member.name}
-                    className="flex items-center gap-3 p-2.5 rounded-xl bg-slate-800/60 border border-slate-800 hover:border-amber-500/30 transition-colors"
-                  >
-                    <div className="p-1.5 rounded-lg bg-slate-700/60 shrink-0">
-                      {iconMap[member.iconName]}
-                    </div>
-                    <div className="flex flex-col text-right">
-                      <span className="text-xs text-amber-400 font-semibold">
-                        {member.role}
-                      </span>
-                      <span className="text-sm font-bold text-white">
-                        {member.name}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
+              <TeamCreditsShowcase compact />
             </div>
           </div>
 
-          {/* Prominent Legal Disclaimer Banner (TASK 4) */}
-          <div className="mt-10 p-4 rounded-2xl bg-slate-950/90 border border-slate-800/90 text-right space-y-1.5 text-xs text-slate-400">
+          {/* Prominent Legal Disclaimer Banner */}
+          <div className="mt-10 p-4 rounded-2xl bg-slate-950/90 border border-amber-500/25 text-right space-y-1.5 text-xs text-slate-400">
             <div className="flex items-center gap-2 text-amber-400 font-bold text-xs">
               <AlertCircle className="w-4 h-4 shrink-0" />
-              <span>إخلاء مسؤولية قانوني ورسمي:</span>
+              <span>{INDEPENDENCE_DISCLAIMER} — إخلاء مسؤولية قانوني ورسمي:</span>
             </div>
             <p className="leading-relaxed text-[11px] text-slate-400">
-              {PLATFORM_NAME} هي منصة تعليمية رقمية طلابية مستقلة تماماً ومملوكة ملكية خاصة خالصة لإدارتها ومؤسسيها. المنصة لا تتبع أي جامعة أو جهة حكومية أو نقابية، ولا ترتبط بأي صفة رسمية أو تمثيل أو وكالة بأي كلية أو جامعة حكومية أو خاصة أو وزارة التعليم العالي. كافة المواد والملخصات والأسئلة المنشورة هي اجتهادات استرشادية خاصة لا تغني عن الكتب الجامعية المقررة.
+              {PLATFORM_NAME} هي مبادرة طلابية وتعليمية رقمية مستقلة تماماً ومملوكة ملكية خاصة لإدارتها ومؤسسيها. المنصة لا تتبع أي جهة رسمية أو حكومية أو نقابية أو وزارة التعليم العالي. كافة المواد والملخصات والأسئلة المنشورة هي اجتهادات استرشادية للمساعدة الدراسية فقط لا تغني عن المراجع المقررة، ويتحمل المستخدم وحده مسؤولية استخدامه للمنصة مع حظر أي نسخ أو استغلال غير مصرح به.
             </p>
           </div>
 

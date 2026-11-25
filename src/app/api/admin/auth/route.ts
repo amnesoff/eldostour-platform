@@ -10,6 +10,8 @@ import {
   getSecureCookieOptions,
 } from '@/lib/server/security';
 import { AdminSession, SubAdminUser } from '@/types';
+import { FOUNDER_FULL_PERMISSIONS } from '@/lib/constants';
+import { getSupervisorGranularPermissions } from '@/lib/server/adminSecurityDb';
 
 function hashSha256(str: string): string {
   return crypto.createHash('sha256').update(str).digest('hex');
@@ -169,6 +171,7 @@ export async function POST(req: NextRequest) {
             can_manage_content: true,
             can_delete_content: true,
             can_access_student_vault: true,
+            granular: FOUNDER_FULL_PERMISSIONS,
           },
         };
 
@@ -206,15 +209,28 @@ export async function POST(req: NextRequest) {
           );
         }
 
+        const granularPerms = await getSupervisorGranularPermissions(subAdmin.username, subAdmin);
+
         const sessionPayload: AdminSession = {
           username: subAdmin.username,
           is_super_admin: false,
           session_version: 1,
           permissions: {
-            can_manage_students: Boolean(subAdmin.can_manage_students),
-            can_manage_content: Boolean(subAdmin.can_manage_content),
-            can_delete_content: Boolean(subAdmin.can_delete_content),
-            can_access_student_vault: Boolean(subAdmin.can_access_student_vault),
+            can_manage_students: Boolean(subAdmin.can_manage_students || granularPerms.students.view),
+            can_manage_content: Boolean(
+              subAdmin.can_manage_content ||
+                granularPerms.materials.view ||
+                granularPerms.quizzes.view ||
+                granularPerms.stories.view
+            ),
+            can_delete_content: Boolean(
+              subAdmin.can_delete_content ||
+                granularPerms.materials.delete ||
+                granularPerms.quizzes.delete ||
+                granularPerms.stories.delete
+            ),
+            can_access_student_vault: Boolean(subAdmin.can_access_student_vault || granularPerms.students.view),
+            granular: granularPerms,
           },
         };
 
@@ -293,6 +309,7 @@ export async function POST(req: NextRequest) {
             can_manage_content: true,
             can_delete_content: true,
             can_access_student_vault: true,
+            granular: FOUNDER_FULL_PERMISSIONS,
           },
         };
 

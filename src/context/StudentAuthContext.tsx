@@ -27,7 +27,7 @@ interface StudentAuthContextType {
   closeAuthModal: () => void;
   modalDefaultMode: 'login' | 'register' | 'guest';
   login: (phoneOrEmail: string, password: string) => Promise<{ success: boolean; error?: string; pendingApproval?: boolean }>;
-  register: (data: RegisterStudentData) => Promise<{ success: boolean; error?: string; pendingApproval?: boolean; student?: Student }>;
+  register: (data: RegisterStudentData) => Promise<{ success: boolean; error?: string; pendingApproval?: boolean; student?: Student; whatsapp_target?: { name?: string; role?: string; phone?: string } }>;
   registerGuest: (data: GuestStudentData) => Promise<{ success: boolean; error?: string }>;
   enterGuestPreviewMode: () => void;
   markWelcomeShown: () => Promise<void>;
@@ -218,7 +218,13 @@ export function StudentAuthProvider({ children }: { children: React.ReactNode })
   // Secure Server-Side Registration
   const register = async (
     regData: RegisterStudentData
-  ): Promise<{ success: boolean; error?: string; pendingApproval?: boolean; student?: Student }> => {
+  ): Promise<{
+    success: boolean;
+    error?: string;
+    pendingApproval?: boolean;
+    student?: Student;
+    whatsapp_target?: { name?: string; role?: string; phone?: string };
+  }> => {
     try {
       const currentFingerprint = await getDeviceFingerprint();
       const currentDeviceInfo = getDeviceInfoString();
@@ -240,7 +246,12 @@ export function StudentAuthProvider({ children }: { children: React.ReactNode })
       const newStudent: Student = res.student;
 
       if (res.pendingApproval) {
-        return { success: true, pendingApproval: true, student: newStudent };
+        return {
+          success: true,
+          pendingApproval: true,
+          student: newStudent,
+          whatsapp_target: res.whatsapp_target,
+        };
       }
 
       setStudent(newStudent);
@@ -248,7 +259,12 @@ export function StudentAuthProvider({ children }: { children: React.ReactNode })
       syncStorage(newStudent, false);
       setIsAuthModalOpen(false);
 
-      return { success: true, pendingApproval: false, student: newStudent };
+      return {
+        success: true,
+        pendingApproval: false,
+        student: newStudent,
+        whatsapp_target: res.whatsapp_target,
+      };
     } catch (err: any) {
       return { success: false, error: err?.message || 'حدث خطأ أثناء التسجيل' };
     }

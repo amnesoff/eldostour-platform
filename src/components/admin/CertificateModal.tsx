@@ -23,7 +23,7 @@ interface CertificateModalProps {
 export function CertificateModal({ data, onClose }: CertificateModalProps) {
   const [customTitle, setCustomTitle] = useState('شهادة تفوق وتقدير أكاديمي');
   const [customNote, setCustomNote] = useState(
-    'نظراً لتميزه وجهوده المشرفة واجتيازه الاختبار بنجاح وتفوق بارز في رحاب كلية الحقوق.'
+    'نظراً لتميزه وجهوده المشرفة واجتيازه الاختبار بنجاح وتفوق بارز في العلوم القانونية.'
   );
   const [copied, setCopied] = useState(false);
   const certificateRef = useRef<HTMLDivElement>(null);
@@ -160,7 +160,7 @@ export function CertificateModal({ data, onClose }: CertificateModalProps) {
                 </h2>
 
                 <p className="text-xs sm:text-sm text-slate-300 mb-2">
-                  تتشرف إدارة منصة الدستور التعليمية بكلية الحقوق بمنح هذه الشهادة للطالب / الطالبة:
+                  تتشرف إدارة منصة الدستور التعليمية للعلوم القانونية بمنح هذه الشهادة للطالب / الطالبة:
                 </p>
 
                 {/* Student Full Name Highlight */}

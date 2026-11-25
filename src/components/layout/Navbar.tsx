@@ -21,9 +21,10 @@ import {
 import { AnimatedLogo } from '@/components/ui/AnimatedLogo';
 import { useTheme } from '@/context/ThemeContext';
 import { useStudentAuth } from '@/context/StudentAuthContext';
-import { TEAM_CREDITS, LEADERSHIP_BAR_TEXT, COLLEGE_NAME } from '@/lib/constants';
+import { TEAM_CREDITS, LEADERSHIP_BAR_TEXT, COLLEGE_NAME, INDEPENDENCE_DISCLAIMER } from '@/lib/constants';
 import { DigitalStudentIdCard } from '@/components/tools/DigitalStudentIdCard';
 import { LivePresenceBadge } from '@/components/tools/LivePresenceBadge';
+import { TeamCreditsShowcase } from '@/components/home/TeamCreditsShowcase';
 
 interface NavbarProps {
   onOpenSearch?: () => void;
@@ -63,9 +64,9 @@ export function Navbar({ onOpenSearch }: NavbarProps) {
         <div className="w-full bg-slate-900 text-slate-300 border-b border-slate-800/80 text-[11px] sm:text-xs py-1 px-3">
           <div className="max-w-7xl mx-auto flex items-center justify-between gap-2">
             <div className="flex items-center gap-1.5 overflow-hidden text-ellipsis whitespace-nowrap">
-              <span className="text-amber-400 font-bold shrink-0">🏛️ {COLLEGE_NAME}</span>
-              <span className="text-slate-600 hidden md:inline">|</span>
-              <span className="text-slate-300 font-medium hidden md:inline truncate">{LEADERSHIP_BAR_TEXT}</span>
+              <span className="text-amber-400 font-bold shrink-0">⚖️ {INDEPENDENCE_DISCLAIMER}</span>
+              <span className="text-slate-600 hidden lg:inline">|</span>
+              <span className="text-slate-300 font-medium hidden lg:inline truncate">{LEADERSHIP_BAR_TEXT}</span>
             </div>
 
             <button
@@ -221,26 +222,8 @@ export function Navbar({ onOpenSearch }: NavbarProps) {
               </div>
             </div>
 
-            <div className="space-y-3">
-              {TEAM_CREDITS.map((member) => (
-                <div
-                  key={member.name}
-                  className="flex items-start gap-3.5 p-3.5 rounded-2xl bg-white/5 border border-white/5 hover:border-amber-500/30 transition-colors"
-                >
-                  <div className="p-2 rounded-xl bg-slate-800 border border-white/10 shrink-0 mt-0.5">
-                    {iconMap[member.iconName]}
-                  </div>
-                  <div className="flex-1">
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold text-base text-white">{member.name}</span>
-                      <span className="text-[11px] font-semibold text-amber-400 bg-amber-400/10 px-2.5 py-0.5 rounded-full border border-amber-400/20">
-                        {member.role}
-                      </span>
-                    </div>
-                    <p className="text-xs text-slate-400 mt-1">{member.description}</p>
-                  </div>
-                </div>
-              ))}
+            <div className="mb-4">
+              <TeamCreditsShowcase compact />
             </div>
 
             <div className="mt-6 pt-4 border-t border-white/10 text-center">

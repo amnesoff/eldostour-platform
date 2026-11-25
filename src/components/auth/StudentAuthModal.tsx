@@ -62,6 +62,8 @@ export function StudentAuthModal() {
   // Registration Flow Step
   const [regStep, setRegStep] = useState<'form' | 'pending_approval'>('form');
   const [registeredCode, setRegisteredCode] = useState('');
+  const [whatsappTargetPhone, setWhatsappTargetPhone] = useState(WHATSAPP_APPROVAL_NUMBER);
+  const [whatsappTargetName, setWhatsappTargetName] = useState('');
   const [isRegistrationPaused, setIsRegistrationPaused] = useState(false);
   const [isPlatformLocked, setIsPlatformLocked] = useState(false);
 
@@ -171,8 +173,12 @@ export function StudentAuthModal() {
       if (!res.success) {
         setError(res.error || 'فشل إتمام التسجيل');
       } else {
-        // On successful registration, always open the WhatsApp Activation modal
+        // On successful registration, always open the WhatsApp Activation modal (Round-Robin)
         setRegisteredCode(res.student?.student_code || '');
+        if (res.whatsapp_target?.phone) {
+          setWhatsappTargetPhone(res.whatsapp_target.phone.replace(/\D/g, '') || WHATSAPP_APPROVAL_NUMBER);
+          setWhatsappTargetName(res.whatsapp_target.name || '');
+        }
         setRegStep('pending_approval');
         setSuccess('');
       }
@@ -223,7 +229,18 @@ export function StudentAuthModal() {
 
   const selectedYearName = ACADEMIC_YEARS.find((y) => y.id === academicYear)?.name || `الفرقة ${academicYear}`;
 
-  const whatsappMessageText = `أهلاً دكتور مازن، سجلت في منصة الدستور التعليمية وأرجو تفعيل حسابي:\nالاسم: ${fullName || 'طالب مسجل'}\nرقم الهاتف المسجل: ${phone}\nالفرقة: ${selectedYearName}`;
+  const whatsappMessageText = [
+    'أهلاً بإدارة منصة الدستور التعليمية، تم تسجيل طالب جديد ويرجى تفعيل حسابه:',
+    'ــــــــــــــــــــ',
+    `الاسم: ${fullName || 'طالب مسجل'}`,
+    'ــــــــــــــــــــ',
+    `رقم الهاتف: ${phone}`,
+    'ــــــــــــــــــــ',
+    `الفرقة الدراسية: ${selectedYearName} (${studyType})`,
+    'ــــــــــــــــــــ',
+    `كلمة المرور: ${password || 'مسجلة'}`,
+    'ــــــــــــــــــــ',
+  ].join('\n');
 
   return (
     <AnimatePresence>
@@ -307,8 +324,13 @@ export function StudentAuthModal() {
               </div>
 
               <div className="space-y-2.5 pt-2">
+                {whatsappTargetName && (
+                  <p className="text-[11px] font-bold text-emerald-400">
+                    سيتم التوجيه تلقائياً إلى: {whatsappTargetName}
+                  </p>
+                )}
                 <a
-                  href={`https://wa.me/${WHATSAPP_APPROVAL_NUMBER}?text=${encodeURIComponent(whatsappMessageText)}`}
+                  href={`https://wa.me/${whatsappTargetPhone || WHATSAPP_APPROVAL_NUMBER}?text=${encodeURIComponent(whatsappMessageText)}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="w-full min-h-[44px] py-3 px-4 rounded-2xl bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-500 hover:to-green-500 text-white font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/30 transition-all active:scale-95 cursor-pointer"
