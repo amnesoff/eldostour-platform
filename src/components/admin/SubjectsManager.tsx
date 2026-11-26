@@ -11,19 +11,21 @@ import {
   Loader2,
   GraduationCap,
 } from 'lucide-react';
-import { Subject, AcademicYearId, Material } from '@/types';
-import { ACADEMIC_YEARS, SCHEDULE_SUBJECTS } from '@/lib/constants';
-import { adminDbMutate, adminSeedScheduleSubjects } from '@/lib/apiClient';
+import { Subject, AcademicYearId, Material, AdminSession } from '@/types';
+import { ACADEMIC_YEARS, SCHEDULE_SUBJECTS, SEMESTER_2_SUBJECTS } from '@/lib/constants';
+import { adminDbMutate, adminSeedScheduleSubjects, adminClearSubjects } from '@/lib/apiClient';
 
 interface SubjectsManagerProps {
   subjects: Subject[];
   materials: Material[];
+  adminSession?: AdminSession | null;
   onRefresh: () => void;
 }
 
 export function SubjectsManager({
   subjects,
   materials,
+  adminSession,
   onRefresh,
 }: SubjectsManagerProps) {
   const [newSubjectName, setNewSubjectName] = useState('');
@@ -33,29 +35,101 @@ export function SubjectsManager({
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
+  // Term 2 & Bulk Clear Modal States
+  const [clearConfirmScope, setClearConfirmScope] = useState<'all' | 'term1' | 'term2' | null>(null);
+  const [isClearing, setIsClearing] = useState(false);
+  const [isTerm2ModalOpen, setIsTerm2ModalOpen] = useState(false);
+  const [term2Year, setTerm2Year] = useState<AcademicYearId>(1);
+  const [term2BulkText, setTerm2BulkText] = useState('');
+  const [term2ReplaceMode, setTerm2ReplaceMode] = useState(false);
+
+  const canBulkClear = Boolean(
+    adminSession?.is_super_admin || adminSession?.permissions?.granular?.materials?.delete
+  );
+
   // Deleting state
   const [deletingSubject, setDeletingSubject] = useState<Subject | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  // Bulk Seed Official Schedule Subjects (28 Subjects across Grades 1-4)
-  const handleSeedScheduleSubjects = async () => {
+  // Bulk Seed Official Schedule Subjects (Term 1 - 28 Subjects across Grades 1-4)
+  const handleSeedScheduleSubjects = async (term: 'term1' | 'term2' = 'term1') => {
     setIsSeeding(true);
     setError('');
     setSuccess('');
     try {
-      const res = await adminSeedScheduleSubjects();
+      const res = await adminSeedScheduleSubjects({ term });
       if (!res?.success) {
         throw new Error(res?.error || res?.details?.[0] || 'فشل استيراد مواد الجداول');
       }
       setSuccess(
         res.insertedCount > 0
-          ? `تم استيراد ${res.insertedCount} مادة جديدة من جداول الفرق الأربعة بنجاح!`
-          : `جميع مواد الجداول (${res.totalScheduleSubjects} مادة) مضافة بالفعل!`
+          ? `تم استيراد ${res.insertedCount} مادة جديدة (${term === 'term1' ? 'الترم الأول' : 'الترم الثاني'}) بنجاح!`
+          : `جميع مواد (${term === 'term1' ? 'الترم الأول' : 'الترم الثاني'}) مضافة بالفعل!`
       );
       onRefresh();
       setTimeout(() => setSuccess(''), 4000);
     } catch (err: any) {
       setError(err?.message || 'حدث خطأ غير متوقع أثناء استيراد المواد');
+    } finally {
+      setIsSeeding(false);
+    }
+  };
+
+  // Bulk Clear / Reset Subjects with Confirmation
+  const handleConfirmBulkClear = async () => {
+    if (!clearConfirmScope) return;
+    setIsClearing(true);
+    setError('');
+    setSuccess('');
+    try {
+      const res = await adminClearSubjects({ scope: clearConfirmScope });
+      if (!res?.success) throw new Error(res?.error || 'فشل مسح المواد');
+      setSuccess(`تم مسح ${res.deletedCount || 0} مادة بنجاح!`);
+      setClearConfirmScope(null);
+      onRefresh();
+      setTimeout(() => setSuccess(''), 4000);
+    } catch (err: any) {
+      setError(err?.message || 'حدث خطأ أثناء مسح المواد');
+    } finally {
+      setIsClearing(false);
+    }
+  };
+
+  // Custom Term 2 Bulk Import Handler (Line-separated subject names for selected grade or Year:Name format)
+  const handleImportTerm2Batch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const lines = term2BulkText
+      .split('\n')
+      .map((l) => l.trim())
+      .filter(Boolean);
+
+    if (lines.length === 0) return;
+
+    const customSubjects = lines.map((line) => {
+      const match = line.match(/^([1-4])\s*[:|-]\s*(.+)$/);
+      if (match) {
+        return { year: Number(match[1]), name: match[2].trim() };
+      }
+      return { year: term2Year, name: line };
+    });
+
+    setIsSeeding(true);
+    setError('');
+    setSuccess('');
+    try {
+      const res = await adminSeedScheduleSubjects({
+        term: 'term2',
+        customSubjects,
+        replaceExisting: term2ReplaceMode,
+      });
+      if (!res?.success) throw new Error(res?.error || 'فشل استيراد مواد الترم الثاني');
+      setSuccess(`تم استيراد ${res.insertedCount || 0} مادة للترم الثاني بنجاح!`);
+      setTerm2BulkText('');
+      setIsTerm2ModalOpen(false);
+      onRefresh();
+      setTimeout(() => setSuccess(''), 4000);
+    } catch (err: any) {
+      setError(err?.message || 'حدث خطأ أثناء استيراد مواد الترم الثاني');
     } finally {
       setIsSeeding(false);
     }
@@ -135,15 +209,52 @@ export function SubjectsManager({
           </div>
         </div>
 
-        <button
-          type="button"
-          onClick={handleSeedScheduleSubjects}
-          disabled={isSeeding}
-          className="px-4 py-2.5 min-h-[44px] rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-2 shadow-md transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
-        >
-          {isSeeding ? <Loader2 className="w-4 h-4 animate-spin" /> : <BookOpen className="w-4 h-4" />}
-          <span>استيراد مواد الجداول الأربعة (28 مادة) 📚</span>
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => handleSeedScheduleSubjects('term1')}
+            disabled={isSeeding}
+            className="px-3.5 py-2.5 min-h-[44px] rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-2 shadow-md transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
+          >
+            {isSeeding ? <Loader2 className="w-4 h-4 animate-spin" /> : <BookOpen className="w-4 h-4" />}
+            <span>استيراد الترم الأول (28 مادة) 📚</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() =>
+              SEMESTER_2_SUBJECTS.length > 0
+                ? handleSeedScheduleSubjects('term2')
+                : setIsTerm2ModalOpen(true)
+            }
+            disabled={isSeeding}
+            className="px-3.5 py-2.5 min-h-[44px] rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs flex items-center gap-2 shadow-md transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            <span>استيراد مواد الترم الثاني 📥</span>
+          </button>
+
+          {canBulkClear && (
+            <>
+              <button
+                type="button"
+                onClick={() => setClearConfirmScope('term1')}
+                className="px-3 py-2.5 min-h-[44px] rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-300 font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>تصفير الترم الأول</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setClearConfirmScope('all')}
+                className="px-3 py-2.5 min-h-[44px] rounded-xl bg-red-600/20 hover:bg-red-600/30 border border-red-500/40 text-red-300 font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>مسح جميع المواد</span>
+              </button>
+            </>
+          )}
+        </div>
       </div>
 
       {/* Add New Subject Form */}
@@ -339,6 +450,143 @@ export function SubjectsManager({
                   <span>تأكيد الحذف</span>
                 </button>
               </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Bulk Clear / Reset Confirmation Modal */}
+      <AnimatePresence>
+        {clearConfirmScope && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="relative w-[95vw] sm:w-full max-w-md bg-slate-900 border border-rose-500/40 rounded-3xl p-6 shadow-2xl text-right text-white"
+            >
+              <div className="w-12 h-12 rounded-2xl bg-rose-500/20 text-rose-400 flex items-center justify-center mb-4">
+                <AlertCircle className="w-6 h-6" />
+              </div>
+
+              <h3 className="text-base font-bold text-white mb-2">
+                {clearConfirmScope === 'all'
+                  ? 'تأكيد مسح جميع المواد الدراسية؟'
+                  : clearConfirmScope === 'term1'
+                  ? 'تأكيد تصفير مواد الترم الأول؟'
+                  : 'تأكيد تصفير مواد الترم الثاني؟'}
+              </h3>
+              <p className="text-xs text-slate-400 leading-relaxed mb-5">
+                {clearConfirmScope === 'all'
+                  ? 'سيتم مسح كافة المواد الدراسية عبر الفرق الأربعة تمهيداً لإعادة استيراد مواد جديدة. لا يمكن التراجع عن هذا الإجراء.'
+                  : 'سيتم حذف مواد هذا الفصل الدراسي فقط من القائمة بنجاح لتسهيل استبدالها بمواد الفصل الجديد.'}
+              </p>
+
+              <div className="flex items-center justify-end gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setClearConfirmScope(null)}
+                  disabled={isClearing}
+                  className="px-4 py-2.5 min-h-[44px] rounded-xl bg-slate-800 text-xs text-slate-300 font-semibold cursor-pointer"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmBulkClear}
+                  disabled={isClearing}
+                  className="px-5 py-2.5 min-h-[44px] rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer"
+                >
+                  {isClearing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                  <span>تأكيد المسح النهائي</span>
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Term 2 Bulk Import Modal */}
+      <AnimatePresence>
+        {isTerm2ModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="relative w-[95vw] sm:w-full max-w-lg max-h-[90dvh] overflow-y-auto bg-slate-900 border border-amber-500/40 rounded-3xl p-6 shadow-2xl text-right text-white"
+            >
+              <h3 className="text-base font-black text-white mb-1 flex items-center gap-2">
+                <BookOpen className="w-5 h-5 text-amber-400" />
+                <span>استيراد مواد الترم الثاني (Bulk Import)</span>
+              </h3>
+              <p className="text-xs text-slate-400 mb-4 leading-relaxed">
+                أدخل أسماء مواد الترم الثاني (مادة في كل سطر). يمكنك أيضاً تحديد الفرقة لكل سطر بصيغة <code className="text-amber-300 font-mono">1: اسم المادة</code> أو اختيار الفرقة أدناه.
+              </p>
+
+              <form onSubmit={handleImportTerm2Batch} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-300 mb-1">
+                    الفرقة الافتراضية للأسطر غير المحددة:
+                  </label>
+                  <select
+                    value={term2Year}
+                    onChange={(e) => setTerm2Year(Number(e.target.value) as AcademicYearId)}
+                    className="w-full h-11 px-3 rounded-xl bg-slate-950 border border-slate-700 focus:border-amber-500 text-xs text-white outline-none"
+                  >
+                    {ACADEMIC_YEARS.map((y) => (
+                      <option key={y.id} value={y.id}>
+                        {y.name} ({y.shortName})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-300 mb-1">
+                    قائمة مواد الترم الثاني:
+                  </label>
+                  <textarea
+                    rows={6}
+                    value={term2BulkText}
+                    onChange={(e) => setTerm2BulkText(e.target.value)}
+                    placeholder={'مثال:\n1: القانون الدستوري\n2: القانون الإداري\n3: قانون العمل'}
+                    required
+                    className="w-full p-3 rounded-xl bg-slate-950 border border-slate-700 focus:border-amber-500 text-xs text-white outline-none leading-relaxed"
+                  />
+                </div>
+
+                {canBulkClear && (
+                  <label className="flex items-center gap-2 text-xs text-rose-300 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={term2ReplaceMode}
+                      onChange={(e) => setTerm2ReplaceMode(e.target.checked)}
+                      className="rounded border-slate-700 text-rose-500 focus:ring-0"
+                    />
+                    <span>مسح المواد الحالية واستبدالها بمواد الترم الثاني</span>
+                  </label>
+                )}
+
+                <div className="flex items-center justify-end gap-2.5 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsTerm2ModalOpen(false)}
+                    disabled={isSeeding}
+                    className="px-4 py-2.5 min-h-[44px] rounded-xl bg-slate-800 text-xs text-slate-300 font-semibold cursor-pointer"
+                  >
+                    إلغاء
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSeeding || !term2BulkText.trim()}
+                    className="px-5 py-2.5 min-h-[44px] rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  >
+                    {isSeeding ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                    <span>استيراد مواد الترم الثاني 📥</span>
+                  </button>
+                </div>
+              </form>
             </motion.div>
           </div>
         )}

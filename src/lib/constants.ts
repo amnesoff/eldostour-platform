@@ -244,6 +244,11 @@ export const SCHEDULE_SUBJECTS: ScheduleSubjectDefinition[] = [
   { year: 4, name: 'القانون البحري والجوي', lecturers: ['د/ إبراهيم سلامة شوشة'] },
 ];
 
+export const SEMESTER_1_SUBJECTS: ScheduleSubjectDefinition[] = SCHEDULE_SUBJECTS;
+
+// Ready-to-populate Term 2 Bulk Import Slot (Grades 1-4)
+export const SEMESTER_2_SUBJECTS: ScheduleSubjectDefinition[] = [];
+
 // 30 Golden Features: Daily Legal Maxims (قواعد قانونية لاتينية وفرنسية وعربية)
 export interface LegalMaxim {
   id: number;

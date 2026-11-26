@@ -92,10 +92,24 @@ export async function adminDbMutate(params: {
   });
 }
 
-export async function adminSeedScheduleSubjects() {
+export async function adminSeedScheduleSubjects(options?: {
+  term?: 'term1' | 'term2';
+  customSubjects?: { year: number; name: string }[];
+  replaceExisting?: boolean;
+}) {
   return adminFetch('/api/admin/db', {
     method: 'POST',
-    body: JSON.stringify({ action: 'seed_schedule_subjects' }),
+    body: JSON.stringify({ action: 'seed_schedule_subjects', ...(options || {}) }),
+  });
+}
+
+export async function adminClearSubjects(params: {
+  scope: 'all' | 'term1' | 'term2' | 'year';
+  year?: number;
+}) {
+  return adminFetch('/api/admin/db', {
+    method: 'POST',
+    body: JSON.stringify({ action: 'clear_subjects', ...params }),
   });
 }
 

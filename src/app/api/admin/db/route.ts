@@ -11,7 +11,7 @@ import {
   UNIFIED_RESET_PASSWORD,
 } from '@/lib/server/security';
 import { AdminSession, GranularPermissions } from '@/types';
-import { FOUNDER_FULL_PERMISSIONS, SCHEDULE_SUBJECTS } from '@/lib/constants';
+import { FOUNDER_FULL_PERMISSIONS, SCHEDULE_SUBJECTS, SEMESTER_1_SUBJECTS, SEMESTER_2_SUBJECTS } from '@/lib/constants';
 import {
   getAdminSecurityRow,
   updateAdminSecurityRow,
@@ -1065,8 +1065,87 @@ export async function POST(req: NextRequest) {
     }
 
     // -------------------------------------------------------------
-    // 10B. BULK SEED SCHEDULE SUBJECTS (Grades 1-4)
+    // 10B. BULK SEED & CLEAR SCHEDULE SUBJECTS (Grades 1-4, Term 1 / Term 2)
     // -------------------------------------------------------------
+    if (action === 'clear_subjects') {
+      if (!admin.is_super_admin && !hasGranularPermission(admin, 'materials', 'delete')) {
+        return NextResponse.json(
+          { success: false, error: 'غير مصرح بمسح المواد الدراسية (يتطلب صلاحية المؤسس أو الحذف)' },
+          { status: 403 }
+        );
+      }
+
+      const scope = body.scope as 'all' | 'term1' | 'term2' | 'year';
+      const targetYear = body.year ? Number(body.year) : undefined;
+      const normalizeName = (str: string) => str.trim().replace(/\s+/g, ' ');
+
+      if (scope === 'all') {
+        const { data: deleted, error: delErr } = await supabaseAdmin
+          .from('subjects')
+          .delete()
+          .not('id', 'is', null)
+          .select('id');
+
+        if (delErr) {
+          return NextResponse.json({ success: false, error: `فشل مسح المواد: ${delErr.message}` }, { status: 500 });
+        }
+
+        await logAdminAudit(admin.username, 'clear_subjects_all', `تم مسح جميع المواد الدراسية (${deleted?.length || 0} مادة)`, ip);
+        return NextResponse.json({ success: true, deletedCount: deleted?.length || 0 });
+      }
+
+      if (scope === 'year' && targetYear) {
+        const { data: deleted, error: delErr } = await supabaseAdmin
+          .from('subjects')
+          .delete()
+          .eq('year', targetYear)
+          .select('id');
+
+        if (delErr) {
+          return NextResponse.json({ success: false, error: `فشل مسح مواد الفرقة ${targetYear}: ${delErr.message}` }, { status: 500 });
+        }
+
+        await logAdminAudit(admin.username, 'clear_subjects_year', `تم مسح مواد الفرقة ${targetYear} (${deleted?.length || 0} مادة)`, ip);
+        return NextResponse.json({ success: true, deletedCount: deleted?.length || 0 });
+      }
+
+      if (scope === 'term1' || scope === 'term2') {
+        const refList = scope === 'term1' ? SEMESTER_1_SUBJECTS : SEMESTER_2_SUBJECTS;
+        if (refList.length === 0) {
+          return NextResponse.json({ success: true, deletedCount: 0 });
+        }
+
+        const refSet = new Set(refList.map((s) => `${s.year}::${normalizeName(s.name)}`));
+        const { data: allSubs, error: fetchErr } = await supabaseAdmin.from('subjects').select('id, name, year');
+        if (fetchErr) {
+          return NextResponse.json({ success: false, error: fetchErr.message }, { status: 500 });
+        }
+
+        const idsToDelete = (allSubs || [])
+          .filter((s: any) => refSet.has(`${Number(s.year)}::${normalizeName(String(s.name || ''))}`))
+          .map((s: any) => s.id);
+
+        let deletedCount = 0;
+        if (idsToDelete.length > 0) {
+          const { data: deleted, error: delErr } = await supabaseAdmin
+            .from('subjects')
+            .delete()
+            .in('id', idsToDelete)
+            .select('id');
+
+          if (delErr) {
+            return NextResponse.json({ success: false, error: `فشل مسح مواد ${scope}: ${delErr.message}` }, { status: 500 });
+          }
+          deletedCount = deleted?.length || idsToDelete.length;
+        }
+
+        await logAdminAudit(admin.username, `clear_subjects_${scope}`, `تم مسح مواد ${scope} (${deletedCount} مادة)`, ip);
+        return NextResponse.json({ success: true, deletedCount });
+      }
+
+      return NextResponse.json({ success: false, error: 'نطاق المسح غير صالح' }, { status: 400 });
+    }
+
     if (action === 'seed_schedule_subjects') {
       if (
         !admin.is_super_admin &&
@@ -1076,7 +1155,32 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ success: false, error: 'غير مصرح بإدارة المواد الدراسية' }, { status: 403 });
       }
 
+      const term = body.term === 'term2' ? 'term2' : 'term1';
+      const replaceExisting = Boolean(body.replaceExisting);
+      const customSubjects = Array.isArray(body.customSubjects) ? body.customSubjects : null;
       const normalizeName = (str: string) => str.trim().replace(/\s+/g, ' ');
+
+      const sourceList: { year: number; name: string }[] = customSubjects
+        ? customSubjects
+            .filter((s: any) => s && s.name && Number(s.year) >= 1 && Number(s.year) <= 4)
+            .map((s: any) => ({ year: Number(s.year), name: String(s.name).trim() }))
+        : term === 'term2'
+        ? SEMESTER_2_SUBJECTS
+        : SEMESTER_1_SUBJECTS;
+
+      if (sourceList.length === 0) {
+        return NextResponse.json(
+          { success: false, error: 'قائمة مواد هذا الترم فارغة حالياً. يرجى إدخال أو إضافة مواد الترم الثاني أولاً.' },
+          { status: 400 }
+        );
+      }
+
+      if (replaceExisting) {
+        if (!admin.is_super_admin && !hasGranularPermission(admin, 'materials', 'delete')) {
+          return NextResponse.json({ success: false, error: 'غير مصرح باستبدال/مسح المواد الحالية' }, { status: 403 });
+        }
+        await supabaseAdmin.from('subjects').delete().not('id', 'is', null);
+      }
 
       const { data: existingSubjects, error: fetchErr } = await supabaseAdmin
         .from('subjects')
@@ -1090,12 +1194,12 @@ export async function POST(req: NextRequest) {
         (existingSubjects || []).map((s: any) => `${Number(s.year)}::${normalizeName(String(s.name || ''))}`)
       );
 
-      const toInsert = SCHEDULE_SUBJECTS.filter(
-        (sub) => !existingSet.has(`${sub.year}::${normalizeName(sub.name)}`)
-      ).map((sub) => ({
-        name: sub.name.trim(),
-        year: Number(sub.year),
-      }));
+      const toInsert = sourceList
+        .filter((sub) => !existingSet.has(`${sub.year}::${normalizeName(sub.name)}`))
+        .map((sub) => ({
+          name: sub.name.trim(),
+          year: Number(sub.year),
+        }));
 
       let insertedCount = 0;
       const rowErrors: string[] = [];
@@ -1139,14 +1243,14 @@ export async function POST(req: NextRequest) {
       await logAdminAudit(
         admin.username,
         'seed_schedule_subjects',
-        `تم استيراد ${insertedCount} مادة جديدة من جداول الفرق الأربعة`,
+        `تم استيراد ${insertedCount} مادة (${term}) من جداول الفرق الأربعة`,
         ip
       );
 
       return NextResponse.json({
         success: true,
         insertedCount,
-        totalScheduleSubjects: SCHEDULE_SUBJECTS.length,
+        totalScheduleSubjects: sourceList.length,
         warnings: rowErrors.length > 0 ? rowErrors : undefined,
       });
     }

@@ -889,6 +889,7 @@ export default function AdminDashboardClient({
                     <SubjectsManager
                       subjects={subjects}
                       materials={materials}
+                      adminSession={adminSession}
                       onRefresh={() => loadAdminData(false)}
                     />
                   )}
