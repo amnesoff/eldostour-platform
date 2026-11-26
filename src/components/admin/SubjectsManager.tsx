@@ -625,7 +625,7 @@ export function SubjectsManager({
                   )}
                   <input
                     type="file"
-                    accept="image/*"
+                    accept="image/*,.jfif,.jpg,.jpeg,.png,.gif,.webp,.avif,.svg"
                     onChange={(e) => {
                       const f = e.target.files?.[0];
                       if (f) {
@@ -668,7 +668,7 @@ export function SubjectsManager({
                   )}
                   <input
                     type="file"
-                    accept="video/mp4,video/webm"
+                    accept="video/*,.mp4,.webm,.mov,.m4v,.avi,.mkv"
                     onChange={(e) => {
                       const f = e.target.files?.[0];
                       if (f) {

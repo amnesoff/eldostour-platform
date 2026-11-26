@@ -735,7 +735,7 @@ export function SubjectCoversManager({ subjects, onRefresh }: SubjectCoversManag
 
               <input
                 type="file"
-                accept="image/*"
+                accept="image/*,.jfif,.jpg,.jpeg,.png,.gif,.webp,.avif,.svg"
                 onChange={(e) => {
                   const file = e.target.files?.[0];
                   if (file) {
@@ -793,7 +793,7 @@ export function SubjectCoversManager({ subjects, onRefresh }: SubjectCoversManag
 
               <input
                 type="file"
-                accept="video/mp4,video/webm"
+                accept="video/*,.mp4,.webm,.mov,.m4v,.avi,.mkv"
                 onChange={(e) => {
                   const file = e.target.files?.[0];
                   if (file) {
