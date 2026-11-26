@@ -113,6 +113,26 @@ export async function adminClearSubjects(params: {
   });
 }
 
+export async function adminGetSubjectsWithCovers() {
+  return adminFetch('/api/admin/db', {
+    method: 'POST',
+    body: JSON.stringify({ action: 'get_subjects_with_covers' }),
+  });
+}
+
+export async function adminSaveSubjectDirect(payload: {
+  subjectId: string;
+  name: string;
+  year: number;
+  cover_image_url?: string;
+  preview_video_url?: string;
+}) {
+  return adminFetch('/api/admin/db', {
+    method: 'POST',
+    body: JSON.stringify({ action: 'save_subject_direct', ...payload }),
+  });
+}
+
 export async function adminGetSiteSettings() {
   return adminFetch('/api/admin/db', {
     method: 'POST',

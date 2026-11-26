@@ -760,30 +760,17 @@ export default function AdminDashboardClient({
                     </button>
                   )}
                   {(isFounder || !gPerms || gPerms.materials?.bundles) && (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => setMaterialsSubTab('covers')}
-                        className={`px-3 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap min-h-[44px] cursor-pointer ${
-                          materialsSubTab === 'covers'
-                            ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
-                            : 'bg-slate-800 text-slate-300 hover:bg-slate-750'
-                        }`}
-                      >
-                        أغلفة المواد
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setMaterialsSubTab('subjects')}
-                        className={`px-3 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap min-h-[44px] cursor-pointer ${
-                          materialsSubTab === 'subjects'
-                            ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
-                            : 'bg-slate-800 text-slate-300 hover:bg-slate-750'
-                        }`}
-                      >
-                        المواد المقررة ({totalSubjects})
-                      </button>
-                    </>
+                    <button
+                      type="button"
+                      onClick={() => setMaterialsSubTab('subjects')}
+                      className={`px-3 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap min-h-[44px] cursor-pointer ${
+                        materialsSubTab === 'subjects' || materialsSubTab === 'covers'
+                          ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
+                          : 'bg-slate-800 text-slate-300 hover:bg-slate-750'
+                      }`}
+                    >
+                      المواد المقررة ({totalSubjects})
+                    </button>
                   )}
                 </div>
               )}
@@ -879,13 +866,7 @@ export default function AdminDashboardClient({
                       onUploadSuccess={() => loadAdminData(false)}
                     />
                   )}
-                  {materialsSubTab === 'covers' && (
-                    <SubjectCoversManager
-                      subjects={subjects}
-                      onRefresh={() => loadAdminData(false)}
-                    />
-                  )}
-                  {materialsSubTab === 'subjects' && (
+                  {(materialsSubTab === 'subjects' || materialsSubTab === 'covers') && (
                     <SubjectsManager
                       subjects={subjects}
                       materials={materials}

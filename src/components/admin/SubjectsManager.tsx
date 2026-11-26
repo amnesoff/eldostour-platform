@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   BookOpen,
@@ -10,10 +10,22 @@ import {
   CheckCircle2,
   Loader2,
   GraduationCap,
+  Image as ImageIcon,
+  Video,
+  Edit3,
+  X,
+  Upload,
 } from 'lucide-react';
-import { Subject, AcademicYearId, Material, AdminSession } from '@/types';
+import { Subject, AcademicYearId, Material, AdminSession, SubjectCover } from '@/types';
 import { ACADEMIC_YEARS, SCHEDULE_SUBJECTS, SEMESTER_2_SUBJECTS } from '@/lib/constants';
-import { adminDbMutate, adminSeedScheduleSubjects, adminClearSubjects } from '@/lib/apiClient';
+import { uploadSubjectCoverImage, uploadSubjectPreviewVideo } from '@/lib/supabase';
+import {
+  adminDbMutate,
+  adminSeedScheduleSubjects,
+  adminClearSubjects,
+  adminGetSubjectsWithCovers,
+  adminSaveSubjectDirect,
+} from '@/lib/apiClient';
 
 interface SubjectsManagerProps {
   subjects: Subject[];
@@ -50,6 +62,95 @@ export function SubjectsManager({
   // Deleting state
   const [deletingSubject, setDeletingSubject] = useState<Subject | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  // Direct Click-to-Edit Subject + Media State
+  const [coversMap, setCoversMap] = useState<Record<string, SubjectCover>>({});
+  const [editingSubject, setEditingSubject] = useState<Subject | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editYear, setEditYear] = useState<AcademicYearId>(1);
+  const [editCoverUrl, setEditCoverUrl] = useState('');
+  const [editCoverFile, setEditCoverFile] = useState<File | null>(null);
+  const [editVideoUrl, setEditVideoUrl] = useState('');
+  const [editVideoFile, setEditVideoFile] = useState<File | null>(null);
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+
+  const loadCovers = useCallback(async () => {
+    try {
+      const res = await adminGetSubjectsWithCovers();
+      if (res?.success && Array.isArray(res.covers)) {
+        const map: Record<string, SubjectCover> = {};
+        for (const cov of res.covers as SubjectCover[]) {
+          if (cov.subject_id) {
+            map[cov.subject_id] = cov;
+          }
+        }
+        setCoversMap(map);
+      }
+    } catch {
+      // ignore non-fatal cover load error
+    }
+  }, []);
+
+  useEffect(() => {
+    loadCovers();
+  }, [loadCovers, subjects.length]);
+
+  const handleOpenEditSubject = (sub: Subject) => {
+    const cov = coversMap[sub.id];
+    setEditingSubject(sub);
+    setEditName(sub.name);
+    setEditYear(sub.year);
+    setEditCoverUrl(cov?.cover_image_url || '');
+    setEditCoverFile(null);
+    setEditVideoUrl(cov?.preview_video_url || '');
+    setEditVideoFile(null);
+    setError('');
+  };
+
+  const handleSaveDirectEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingSubject || !editName.trim()) return;
+    setIsSavingEdit(true);
+    setError('');
+    setSuccess('');
+
+    try {
+      let finalCoverUrl = editCoverUrl;
+      let finalVideoUrl = editVideoUrl;
+
+      if (editCoverFile) {
+        const imgRes = await uploadSubjectCoverImage(editCoverFile, editYear);
+        finalCoverUrl = imgRes.publicUrl;
+      }
+
+      if (editVideoFile) {
+        const vidRes = await uploadSubjectPreviewVideo(editVideoFile, editYear);
+        finalVideoUrl = vidRes.publicUrl;
+      }
+
+      const res = await adminSaveSubjectDirect({
+        subjectId: editingSubject.id,
+        name: editName.trim(),
+        year: editYear,
+        cover_image_url: finalCoverUrl,
+        preview_video_url: finalVideoUrl,
+      });
+
+      if (!res?.success) {
+        throw new Error(res?.error || 'فشل حفظ تعديلات المادة');
+      }
+
+      setSuccess(`تم حفظ مادة "${editName.trim()}" ووسائطها بنجاح!`);
+      setEditingSubject(null);
+      await loadCovers();
+      onRefresh();
+      setTimeout(() => setSuccess(''), 3500);
+    } catch (err: any) {
+      setError(err?.message || 'حدث خطأ أثناء حفظ تعديلات المادة');
+    } finally {
+      setIsSavingEdit(false);
+    }
+  };
 
   // Bulk Seed Official Schedule Subjects (Term 1 - 28 Subjects across Grades 1-4)
   const handleSeedScheduleSubjects = async (term: 'term1' | 'term2' = 'term1') => {
@@ -366,29 +467,47 @@ export function SubjectsManager({
                     const scheduleInfo = SCHEDULE_SUBJECTS.find(
                       (item) => item.year === sub.year && item.name.trim() === sub.name.trim()
                     );
+                    const cov = coversMap[sub.id];
 
                     return (
                       <div
                         key={sub.id}
-                        className="flex items-start justify-between gap-2 p-3 rounded-xl bg-slate-900 border border-slate-800/90 hover:border-amber-500/30 transition-colors"
+                        onClick={() => handleOpenEditSubject(sub)}
+                        className="flex items-start justify-between gap-2 p-3 rounded-xl bg-slate-900 border border-slate-800/90 hover:border-amber-500/50 transition-colors cursor-pointer group"
                       >
                         <div className="min-w-0 pr-1 flex-1">
-                          <div className="font-semibold text-xs sm:text-sm text-white leading-snug">
-                            {sub.name}
+                          <div className="font-semibold text-xs sm:text-sm text-white leading-snug group-hover:text-amber-300 transition-colors flex items-center gap-1.5">
+                            <span>{sub.name}</span>
+                            <Edit3 className="w-3 h-3 text-slate-500 group-hover:text-amber-400 shrink-0" />
                           </div>
                           {scheduleInfo && scheduleInfo.lecturers.length > 0 && (
                             <div className="text-[10px] text-amber-300/85 mt-1 leading-relaxed">
                               {scheduleInfo.lecturers.join(' • ')}
                             </div>
                           )}
-                          <div className="text-[11px] text-slate-400 mt-1">
-                            {linkedMaterials} محاضرة مرفوعة
+                          <div className="flex flex-wrap items-center gap-2 mt-1.5 text-[11px] text-slate-400">
+                            <span>{linkedMaterials} محاضرة</span>
+                            {cov?.cover_image_url && (
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 text-[10px] font-bold">
+                                <ImageIcon className="w-3 h-3" />
+                                صورة
+                              </span>
+                            )}
+                            {cov?.preview_video_url && (
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-300 text-[10px] font-bold">
+                                <Video className="w-3 h-3" />
+                                فيديو
+                              </span>
+                            )}
                           </div>
                         </div>
 
                         <button
                           type="button"
-                          onClick={() => setDeletingSubject(sub)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setDeletingSubject(sub);
+                          }}
                           className="p-2 min-h-[36px] min-w-[36px] rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition-colors shrink-0 cursor-pointer"
                           title="حذف المادة"
                         >
@@ -407,6 +526,162 @@ export function SubjectsManager({
           );
         })}
       </div>
+
+      {/* Direct Subject Click-to-Edit Modal (Image + Animation Video + Details, No Mandatory Lecturer) */}
+      <AnimatePresence>
+        {editingSubject && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="relative w-[95vw] sm:w-full max-w-xl max-h-[90dvh] overflow-y-auto bg-slate-900 border border-amber-500/40 rounded-3xl p-5 sm:p-6 shadow-2xl text-right text-white"
+            >
+              <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-800">
+                <h3 className="text-base font-black text-white flex items-center gap-2">
+                  <Edit3 className="w-5 h-5 text-amber-400" />
+                  <span>تعديل المادة ووسائط العرض مباشرة</span>
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setEditingSubject(null)}
+                  className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <form onSubmit={handleSaveDirectEdit} className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="sm:col-span-2">
+                    <label className="block text-xs font-bold text-slate-300 mb-1">اسم المادة *:</label>
+                    <input
+                      type="text"
+                      required
+                      value={editName}
+                      onChange={(e) => setEditName(e.target.value)}
+                      className="w-full h-11 px-3 rounded-xl bg-slate-950 border border-slate-700 focus:border-amber-500 text-xs sm:text-sm text-white outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-300 mb-1">الفرقة:</label>
+                    <select
+                      value={editYear}
+                      onChange={(e) => setEditYear(Number(e.target.value) as AcademicYearId)}
+                      className="w-full h-11 px-3 rounded-xl bg-slate-950 border border-slate-700 focus:border-amber-500 text-xs sm:text-sm text-white outline-none"
+                    >
+                      {ACADEMIC_YEARS.map((y) => (
+                        <option key={y.id} value={y.id}>
+                          {y.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Direct Image Upload */}
+                <div className="p-4 rounded-2xl bg-slate-950/70 border border-slate-800 space-y-2.5">
+                  <label className="text-xs font-bold text-amber-400 flex items-center gap-1.5">
+                    <Upload className="w-4 h-4" />
+                    <span>صورة الغلاف للمادة (اختياري):</span>
+                  </label>
+                  {editCoverUrl && (
+                    <div className="relative w-full h-32 rounded-xl overflow-hidden bg-slate-900 border border-slate-700">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={editCoverUrl} alt={editName} className="w-full h-full object-cover" />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditCoverUrl('');
+                          setEditCoverFile(null);
+                        }}
+                        className="absolute top-2 left-2 p-1.5 rounded-lg bg-red-600 text-white text-xs cursor-pointer"
+                        title="إزالة الصورة"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) {
+                        setEditCoverFile(f);
+                        setEditCoverUrl(URL.createObjectURL(f));
+                      }
+                    }}
+                    className="w-full text-xs text-slate-400 file:mr-0 file:ml-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-amber-500 file:text-slate-950 hover:file:bg-amber-600 cursor-pointer"
+                  />
+                </div>
+
+                {/* Direct Animation Video Upload */}
+                <div className="p-4 rounded-2xl bg-slate-950/70 border border-slate-800 space-y-2.5">
+                  <label className="text-xs font-bold text-blue-400 flex items-center gap-1.5">
+                    <Video className="w-4 h-4" />
+                    <span>فيديو الأنيميشن / المعاينة للمادة (اختياري):</span>
+                  </label>
+                  {editVideoUrl && (
+                    <div className="relative w-full h-32 rounded-xl overflow-hidden bg-slate-900 border border-slate-700">
+                      <video
+                        src={editVideoUrl}
+                        playsInline
+                        muted
+                        loop
+                        autoPlay
+                        className="w-full h-full object-cover"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditVideoUrl('');
+                          setEditVideoFile(null);
+                        }}
+                        className="absolute top-2 left-2 p-1.5 rounded-lg bg-red-600 text-white text-xs cursor-pointer"
+                        title="إزالة الفيديو"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
+                  <input
+                    type="file"
+                    accept="video/mp4,video/webm"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) {
+                        setEditVideoFile(f);
+                        setEditVideoUrl(URL.createObjectURL(f));
+                      }
+                    }}
+                    className="w-full text-xs text-slate-400 file:mr-0 file:ml-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-blue-600 file:text-white hover:file:bg-blue-700 cursor-pointer"
+                  />
+                </div>
+
+                <div className="flex items-center justify-end gap-2.5 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditingSubject(null)}
+                    disabled={isSavingEdit}
+                    className="px-4 py-2.5 min-h-[44px] rounded-xl bg-slate-800 text-xs text-slate-300 font-semibold cursor-pointer"
+                  >
+                    إلغاء
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSavingEdit || !editName.trim()}
+                    className="px-5 py-2.5 min-h-[44px] rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  >
+                    {isSavingEdit ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                    <span>حفظ التعديلات مباشرة</span>
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* Delete Subject Confirmation Modal */}
       <AnimatePresence>

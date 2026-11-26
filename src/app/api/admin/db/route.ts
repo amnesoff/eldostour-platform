@@ -1256,6 +1256,111 @@ export async function POST(req: NextRequest) {
     }
 
     // -------------------------------------------------------------
+    // 10C. DIRECT SUBJECT EDIT WITH IMAGE & VIDEO MEDIA
+    // -------------------------------------------------------------
+    if (action === 'get_subjects_with_covers') {
+      const [subsRes, covsRes] = await Promise.all([
+        supabaseAdmin.from('subjects').select('*').order('name', { ascending: true }),
+        supabaseAdmin.from('subject_covers').select('*').order('created_at', { ascending: false }),
+      ]);
+
+      if (subsRes.error) {
+        return NextResponse.json({ success: false, error: subsRes.error.message }, { status: 500 });
+      }
+
+      return NextResponse.json({
+        success: true,
+        subjects: subsRes.data || [],
+        covers: covsRes.data || [],
+      });
+    }
+
+    if (action === 'save_subject_direct') {
+      if (
+        !admin.is_super_admin &&
+        !hasGranularPermission(admin, 'materials', 'edit') &&
+        !hasGranularPermission(admin, 'materials', 'bundles')
+      ) {
+        return NextResponse.json({ success: false, error: 'غير مصرح بتعديل المواد الدراسية' }, { status: 403 });
+      }
+
+      const { subjectId, name, year, cover_image_url, preview_video_url } = body;
+      if (!subjectId || !name || !year) {
+        return NextResponse.json({ success: false, error: 'بيانات المادة غير مكتملة' }, { status: 400 });
+      }
+
+      const cleanName = String(name).trim();
+      const numYear = Number(year);
+
+      const { data: updatedSubject, error: subErr } = await supabaseAdmin
+        .from('subjects')
+        .update({ name: cleanName, year: numYear })
+        .eq('id', subjectId)
+        .select()
+        .single();
+
+      if (subErr) {
+        return NextResponse.json({ success: false, error: subErr.message }, { status: 500 });
+      }
+
+      // Sync cover image / animation video into subject_covers if media was provided or already exists
+      const { data: existingCover } = await supabaseAdmin
+        .from('subject_covers')
+        .select('*')
+        .eq('subject_id', subjectId)
+        .maybeSingle();
+
+      const hasMediaInput =
+        cover_image_url !== undefined || preview_video_url !== undefined;
+
+      let savedCover = existingCover || null;
+
+      if (existingCover || (hasMediaInput && (cover_image_url || preview_video_url))) {
+        const coverPayload = {
+          subject_id: subjectId,
+          subject_name: cleanName,
+          year: numYear,
+          cover_image_url:
+            cover_image_url !== undefined
+              ? cover_image_url
+              : existingCover?.cover_image_url || '',
+          preview_video_url:
+            preview_video_url !== undefined
+              ? preview_video_url
+              : existingCover?.preview_video_url || '',
+          professor_name: existingCover?.professor_name || '',
+          description: existingCover?.description || '',
+        };
+
+        if (existingCover) {
+          const { data: updCov, error: covErr } = await supabaseAdmin
+            .from('subject_covers')
+            .update(coverPayload)
+            .eq('id', existingCover.id)
+            .select()
+            .single();
+          if (covErr) {
+            return NextResponse.json({ success: false, error: covErr.message }, { status: 500 });
+          }
+          savedCover = updCov;
+        } else {
+          const { data: insCov, error: covErr } = await supabaseAdmin
+            .from('subject_covers')
+            .insert(coverPayload)
+            .select()
+            .single();
+          if (covErr) {
+            return NextResponse.json({ success: false, error: covErr.message }, { status: 500 });
+          }
+          savedCover = insCov;
+        }
+      }
+
+      await logAdminAudit(admin.username, 'save_subject_direct', `تم تعديل المادة "${cleanName}" ووسائطها مباشرة`, ip);
+      return NextResponse.json({ success: true, subject: updatedSubject, cover: savedCover });
+    }
+
+    // -------------------------------------------------------------
     // 11. GENERIC SECURE MUTATIONS FOR ADMIN CONTENT TABLES
     // -------------------------------------------------------------
     if (action === 'mutate') {
