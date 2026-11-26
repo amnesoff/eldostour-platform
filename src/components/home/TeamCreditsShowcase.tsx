@@ -66,9 +66,9 @@ export function TeamCreditsShowcase({
         </div>
       </div>
 
-      {/* Row 2: وليد محرم & يوسف عمرو & ندى زيد */}
+      {/* Row 2: وليد محرم & يوسف عمرو & ندى زيد (All Gold Glow + Write/Fade Animation) */}
       <div className="relative z-10 grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-        {/* 3. وليد محرم — مشرف إداري (Soft White Glow + Write-in / Stay / Disappear Cycle) */}
+        {/* 3. وليد محرم — مشرف إداري (Gold Glow + Write/Fade Animation) */}
         <div
           style={
             staggered
@@ -77,22 +77,22 @@ export function TeamCreditsShowcase({
                 }
               : undefined
           }
-          className="flex items-center justify-between sm:justify-center gap-2 px-3 py-2.5 rounded-xl bg-slate-900/90 border border-white/25 shadow-[0_0_12px_rgba(255,255,255,0.18)]"
+          className="flex items-center justify-between sm:justify-center gap-2 px-3 py-2.5 rounded-xl bg-amber-950/35 border border-amber-400/50 shadow-[0_0_16px_rgba(245,158,11,0.3)]"
         >
-          <ShieldCheck className="w-4 h-4 text-white shrink-0" />
+          <ShieldCheck className="w-4 h-4 text-amber-300 shrink-0" />
           <div className="text-right sm:text-center">
             <span
-              className={`block text-xs sm:text-sm font-black text-white drop-shadow-[0_0_8px_rgba(255,255,255,0.88)] ${
+              className={`block text-xs sm:text-sm font-black text-amber-300 drop-shadow-[0_0_8px_rgba(251,191,36,0.85)] ${
                 staggered ? '' : 'animate-arabic-write-cycle'
               }`}
             >
               وليد محرم
             </span>
-            <span className="block text-[10px] font-semibold text-slate-300">مشرف إداري</span>
+            <span className="block text-[10px] font-bold text-amber-200/90">مشرف إداري</span>
           </div>
         </div>
 
-        {/* 4. يوسف عمرو — مشرف إداري (Soft White Glow + Write-in / Stay / Disappear Cycle) */}
+        {/* 4. يوسف عمرو — مشرف إداري (Gold Glow + Write/Fade Animation) */}
         <div
           style={
             staggered
@@ -101,23 +101,23 @@ export function TeamCreditsShowcase({
                 }
               : undefined
           }
-          className="flex items-center justify-between sm:justify-center gap-2 px-3 py-2.5 rounded-xl bg-slate-900/90 border border-white/25 shadow-[0_0_12px_rgba(255,255,255,0.18)]"
+          className="flex items-center justify-between sm:justify-center gap-2 px-3 py-2.5 rounded-xl bg-amber-950/35 border border-amber-400/50 shadow-[0_0_16px_rgba(245,158,11,0.3)]"
         >
-          <ShieldCheck className="w-4 h-4 text-white shrink-0" />
+          <ShieldCheck className="w-4 h-4 text-amber-300 shrink-0" />
           <div className="text-right sm:text-center">
             <span
-              style={!staggered ? { animationDelay: '0.7s' } : undefined}
-              className={`block text-xs sm:text-sm font-black text-white drop-shadow-[0_0_8px_rgba(255,255,255,0.88)] ${
+              style={!staggered ? { animationDelay: '0.6s' } : undefined}
+              className={`block text-xs sm:text-sm font-black text-amber-300 drop-shadow-[0_0_8px_rgba(251,191,36,0.85)] ${
                 staggered ? '' : 'animate-arabic-write-cycle'
               }`}
             >
               يوسف عمرو
             </span>
-            <span className="block text-[10px] font-semibold text-slate-300">مشرف إداري</span>
+            <span className="block text-[10px] font-bold text-amber-200/90">مشرف إداري</span>
           </div>
         </div>
 
-        {/* 5. ندى زيد — مشرف عام (Warm Gold Glow + Subtle Twinkling Stars, Zero Hearts) */}
+        {/* 5. ندى زيد — مشرف عام (Gold Glow + Write/Fade Animation + Subtle Stars) */}
         <div
           style={
             staggered
@@ -130,7 +130,12 @@ export function TeamCreditsShowcase({
         >
           <Sparkles className="w-4 h-4 text-amber-300 shrink-0 animate-pulse motion-reduce:animate-none" />
           <div className="text-right sm:text-center flex items-center gap-1.5 sm:block">
-            <span className="text-xs sm:text-sm font-black text-amber-300 drop-shadow-[0_0_8px_rgba(251,191,36,0.85)] inline-flex items-center justify-center gap-1">
+            <span
+              style={!staggered ? { animationDelay: '1.2s' } : undefined}
+              className={`text-xs sm:text-sm font-black text-amber-300 drop-shadow-[0_0_8px_rgba(251,191,36,0.85)] inline-flex items-center justify-center gap-1 ${
+                staggered ? '' : 'animate-arabic-write-cycle'
+              }`}
+            >
               <span className="text-amber-300 animate-pulse motion-reduce:animate-none text-[10px]">✦</span>
               <span>ندى زيد</span>
               <span className="text-amber-300 animate-pulse motion-reduce:animate-none text-[10px]">✦</span>

@@ -24,9 +24,9 @@ export function TeamCreditsBadge() {
           <span className="text-slate-500">•</span>
           <span className="text-red-400 font-bold">رحمة علاء</span>
           <span className="text-slate-500">•</span>
-          <span className="text-white">وليد محرم</span>
+          <span className="text-amber-300 font-bold">وليد محرم</span>
           <span className="text-slate-500">•</span>
-          <span className="text-white">يوسف عمرو</span>
+          <span className="text-amber-300 font-bold">يوسف عمرو</span>
           <span className="text-slate-500">•</span>
           <span className="text-amber-300 font-bold">ندى زيد</span>
         </div>
