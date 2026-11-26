@@ -1068,40 +1068,72 @@ export async function POST(req: NextRequest) {
     // 10B. BULK SEED SCHEDULE SUBJECTS (Grades 1-4)
     // -------------------------------------------------------------
     if (action === 'seed_schedule_subjects') {
-      if (!admin.is_super_admin && !hasGranularPermission(admin, 'materials', 'bundles')) {
+      if (
+        !admin.is_super_admin &&
+        !hasGranularPermission(admin, 'materials', 'bundles') &&
+        !hasGranularPermission(admin, 'materials', 'add')
+      ) {
         return NextResponse.json({ success: false, error: 'غير مصرح بإدارة المواد الدراسية' }, { status: 403 });
       }
+
+      const normalizeName = (str: string) => str.trim().replace(/\s+/g, ' ');
 
       const { data: existingSubjects, error: fetchErr } = await supabaseAdmin
         .from('subjects')
         .select('id, name, year');
 
       if (fetchErr) {
-        return NextResponse.json({ success: false, error: fetchErr.message }, { status: 500 });
+        return NextResponse.json({ success: false, error: `خطأ قراءة المواد: ${fetchErr.message}` }, { status: 500 });
       }
 
       const existingSet = new Set(
-        (existingSubjects || []).map((s: any) => `${s.year}::${String(s.name).trim()}`)
+        (existingSubjects || []).map((s: any) => `${Number(s.year)}::${normalizeName(String(s.name || ''))}`)
       );
 
       const toInsert = SCHEDULE_SUBJECTS.filter(
-        (sub) => !existingSet.has(`${sub.year}::${sub.name.trim()}`)
+        (sub) => !existingSet.has(`${sub.year}::${normalizeName(sub.name)}`)
       ).map((sub) => ({
         name: sub.name.trim(),
-        year: sub.year,
+        year: Number(sub.year),
       }));
 
       let insertedCount = 0;
+      const rowErrors: string[] = [];
+
       if (toInsert.length > 0) {
         const { data: inserted, error: insErr } = await supabaseAdmin
           .from('subjects')
           .insert(toInsert)
           .select();
 
-        if (insErr) {
-          return NextResponse.json({ success: false, error: insErr.message }, { status: 500 });
+        if (!insErr) {
+          insertedCount = inserted?.length || toInsert.length;
+        } else {
+          // Fallback: insert row-by-row so one conflict never blocks the remaining subjects
+          for (const row of toInsert) {
+            const { error: singleErr } = await supabaseAdmin
+              .from('subjects')
+              .insert(row)
+              .select('id')
+              .maybeSingle();
+            if (!singleErr) {
+              insertedCount += 1;
+            } else {
+              rowErrors.push(`${row.name} (الفرقة ${row.year}): ${singleErr.message}`);
+            }
+          }
         }
-        insertedCount = inserted?.length || toInsert.length;
+      }
+
+      if (insertedCount === 0 && toInsert.length > 0 && rowErrors.length > 0) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: `فشل إدراج المواد: ${rowErrors[0]}`,
+            details: rowErrors,
+          },
+          { status: 500 }
+        );
       }
 
       await logAdminAudit(
@@ -1115,6 +1147,7 @@ export async function POST(req: NextRequest) {
         success: true,
         insertedCount,
         totalScheduleSubjects: SCHEDULE_SUBJECTS.length,
+        warnings: rowErrors.length > 0 ? rowErrors : undefined,
       });
     }
 

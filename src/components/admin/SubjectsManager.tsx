@@ -44,7 +44,9 @@ export function SubjectsManager({
     setSuccess('');
     try {
       const res = await adminSeedScheduleSubjects();
-      if (!res?.success) throw new Error(res?.error || 'فشل استيراد مواد الجداول');
+      if (!res?.success) {
+        throw new Error(res?.error || res?.details?.[0] || 'فشل استيراد مواد الجداول');
+      }
       setSuccess(
         res.insertedCount > 0
           ? `تم استيراد ${res.insertedCount} مادة جديدة من جداول الفرق الأربعة بنجاح!`
@@ -53,7 +55,7 @@ export function SubjectsManager({
       onRefresh();
       setTimeout(() => setSuccess(''), 4000);
     } catch (err: any) {
-      setError(`خطأ أثناء استيراد مواد الجداول: ${err?.message || ''}`);
+      setError(err?.message || 'حدث خطأ غير متوقع أثناء استيراد المواد');
     } finally {
       setIsSeeding(false);
     }
