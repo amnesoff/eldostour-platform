@@ -11,7 +11,7 @@ import {
   UNIFIED_RESET_PASSWORD,
 } from '@/lib/server/security';
 import { AdminSession, GranularPermissions } from '@/types';
-import { FOUNDER_FULL_PERMISSIONS } from '@/lib/constants';
+import { FOUNDER_FULL_PERMISSIONS, SCHEDULE_SUBJECTS } from '@/lib/constants';
 import {
   getAdminSecurityRow,
   updateAdminSecurityRow,
@@ -1061,6 +1061,60 @@ export async function POST(req: NextRequest) {
         general: updatedGeneral,
         active_occasion_theme: updatedGeneral?.active_occasion_theme,
         character_widget: updatedCharWidget,
+      });
+    }
+
+    // -------------------------------------------------------------
+    // 10B. BULK SEED SCHEDULE SUBJECTS (Grades 1-4)
+    // -------------------------------------------------------------
+    if (action === 'seed_schedule_subjects') {
+      if (!admin.is_super_admin && !hasGranularPermission(admin, 'materials', 'bundles')) {
+        return NextResponse.json({ success: false, error: 'غير مصرح بإدارة المواد الدراسية' }, { status: 403 });
+      }
+
+      const { data: existingSubjects, error: fetchErr } = await supabaseAdmin
+        .from('subjects')
+        .select('id, name, year');
+
+      if (fetchErr) {
+        return NextResponse.json({ success: false, error: fetchErr.message }, { status: 500 });
+      }
+
+      const existingSet = new Set(
+        (existingSubjects || []).map((s: any) => `${s.year}::${String(s.name).trim()}`)
+      );
+
+      const toInsert = SCHEDULE_SUBJECTS.filter(
+        (sub) => !existingSet.has(`${sub.year}::${sub.name.trim()}`)
+      ).map((sub) => ({
+        name: sub.name.trim(),
+        year: sub.year,
+      }));
+
+      let insertedCount = 0;
+      if (toInsert.length > 0) {
+        const { data: inserted, error: insErr } = await supabaseAdmin
+          .from('subjects')
+          .insert(toInsert)
+          .select();
+
+        if (insErr) {
+          return NextResponse.json({ success: false, error: insErr.message }, { status: 500 });
+        }
+        insertedCount = inserted?.length || toInsert.length;
+      }
+
+      await logAdminAudit(
+        admin.username,
+        'seed_schedule_subjects',
+        `تم استيراد ${insertedCount} مادة جديدة من جداول الفرق الأربعة`,
+        ip
+      );
+
+      return NextResponse.json({
+        success: true,
+        insertedCount,
+        totalScheduleSubjects: SCHEDULE_SUBJECTS.length,
       });
     }
 

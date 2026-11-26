@@ -12,9 +12,8 @@ import {
   GraduationCap,
 } from 'lucide-react';
 import { Subject, AcademicYearId, Material } from '@/types';
-import { ACADEMIC_YEARS } from '@/lib/constants';
-import { supabase } from '@/lib/supabase';
-import { adminDbMutate } from '@/lib/apiClient';
+import { ACADEMIC_YEARS, SCHEDULE_SUBJECTS } from '@/lib/constants';
+import { adminDbMutate, adminSeedScheduleSubjects } from '@/lib/apiClient';
 
 interface SubjectsManagerProps {
   subjects: Subject[];
@@ -30,12 +29,35 @@ export function SubjectsManager({
   const [newSubjectName, setNewSubjectName] = useState('');
   const [newSubjectYear, setNewSubjectYear] = useState<AcademicYearId>(1);
   const [isAdding, setIsAdding] = useState(false);
+  const [isSeeding, setIsSeeding] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
   // Deleting state
   const [deletingSubject, setDeletingSubject] = useState<Subject | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  // Bulk Seed Official Schedule Subjects (28 Subjects across Grades 1-4)
+  const handleSeedScheduleSubjects = async () => {
+    setIsSeeding(true);
+    setError('');
+    setSuccess('');
+    try {
+      const res = await adminSeedScheduleSubjects();
+      if (!res?.success) throw new Error(res?.error || 'فشل استيراد مواد الجداول');
+      setSuccess(
+        res.insertedCount > 0
+          ? `تم استيراد ${res.insertedCount} مادة جديدة من جداول الفرق الأربعة بنجاح!`
+          : `جميع مواد الجداول (${res.totalScheduleSubjects} مادة) مضافة بالفعل!`
+      );
+      onRefresh();
+      setTimeout(() => setSuccess(''), 4000);
+    } catch (err: any) {
+      setError(`خطأ أثناء استيراد مواد الجداول: ${err?.message || ''}`);
+    } finally {
+      setIsSeeding(false);
+    }
+  };
 
   // Add Subject
   const handleAddSubject = async (e: React.FormEvent) => {
@@ -96,7 +118,7 @@ export function SubjectsManager({
   return (
     <div className="w-full bg-slate-900/90 border border-slate-800 rounded-3xl p-5 sm:p-7 shadow-xl text-right text-white">
       {/* Header */}
-      <div className="flex items-center justify-between pb-4 mb-6 border-b border-slate-800">
+      <div className="flex flex-wrap items-center justify-between gap-3 pb-4 mb-6 border-b border-slate-800">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-400/30 flex items-center justify-center">
             <BookOpen className="w-5 h-5" />
@@ -106,10 +128,20 @@ export function SubjectsManager({
               إدارة المواد الدراسية المقررة
             </h3>
             <p className="text-xs text-slate-400">
-              إضافة أو حذف المواد لكل فرقة من الفرق الدراسية الأربعة
+              إضافة أو حذف المواد لكل فرقة من الفرق الدراسية الأربعة (يدعم التكرار والحذف الفردي)
             </p>
           </div>
         </div>
+
+        <button
+          type="button"
+          onClick={handleSeedScheduleSubjects}
+          disabled={isSeeding}
+          className="px-4 py-2.5 min-h-[44px] rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-2 shadow-md transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
+        >
+          {isSeeding ? <Loader2 className="w-4 h-4 animate-spin" /> : <BookOpen className="w-4 h-4" />}
+          <span>استيراد مواد الجداول الأربعة (28 مادة) 📚</span>
+        </button>
       </div>
 
       {/* Add New Subject Form */}
@@ -218,24 +250,33 @@ export function SubjectsManager({
                     const linkedMaterials = materials.filter(
                       (m) => m.subject_id === sub.id
                     ).length;
+                    const scheduleInfo = SCHEDULE_SUBJECTS.find(
+                      (item) => item.year === sub.year && item.name.trim() === sub.name.trim()
+                    );
 
                     return (
                       <div
                         key={sub.id}
-                        className="flex items-center justify-between p-3 rounded-xl bg-slate-900 border border-slate-800/90 hover:border-amber-500/30 transition-colors"
+                        className="flex items-start justify-between gap-2 p-3 rounded-xl bg-slate-900 border border-slate-800/90 hover:border-amber-500/30 transition-colors"
                       >
-                        <div className="min-w-0 pr-1">
-                          <div className="font-semibold text-xs sm:text-sm text-white truncate">
+                        <div className="min-w-0 pr-1 flex-1">
+                          <div className="font-semibold text-xs sm:text-sm text-white leading-snug">
                             {sub.name}
                           </div>
-                          <div className="text-[11px] text-slate-400">
+                          {scheduleInfo && scheduleInfo.lecturers.length > 0 && (
+                            <div className="text-[10px] text-amber-300/85 mt-1 leading-relaxed">
+                              {scheduleInfo.lecturers.join(' • ')}
+                            </div>
+                          )}
+                          <div className="text-[11px] text-slate-400 mt-1">
                             {linkedMaterials} محاضرة مرفوعة
                           </div>
                         </div>
 
                         <button
+                          type="button"
                           onClick={() => setDeletingSubject(sub)}
-                          className="p-1.5 rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                          className="p-2 min-h-[36px] min-w-[36px] rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition-colors shrink-0 cursor-pointer"
                           title="حذف المادة"
                         >
                           <Trash2 className="w-4 h-4" />

@@ -92,6 +92,13 @@ export async function adminDbMutate(params: {
   });
 }
 
+export async function adminSeedScheduleSubjects() {
+  return adminFetch('/api/admin/db', {
+    method: 'POST',
+    body: JSON.stringify({ action: 'seed_schedule_subjects' }),
+  });
+}
+
 export async function adminGetSiteSettings() {
   return adminFetch('/api/admin/db', {
     method: 'POST',
