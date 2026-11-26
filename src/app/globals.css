@@ -220,6 +220,44 @@ html[data-occasion-theme="exams"].dark body {
 /* =======================================================================
    Cross-Device Mobile Responsiveness (360px -> 1440px)
    ======================================================================= */
+/* Custom smooth Arabic write-in, stay, and fade-out cycle (keeps cursive ligatures connected) */
+@keyframes arabicWriteCycle {
+  0% {
+    clip-path: inset(0 0 0 100%);
+    opacity: 0;
+    transform: translate3d(0, 3px, 0);
+  }
+  22% {
+    clip-path: inset(0 0 0 0%);
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+  70% {
+    clip-path: inset(0 0 0 0%);
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+  90%, 100% {
+    clip-path: inset(0 0 0 0%);
+    opacity: 0;
+    transform: translate3d(0, -3px, 0);
+  }
+}
+
+.animate-arabic-write-cycle {
+  animation: arabicWriteCycle 4.2s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+  will-change: transform, opacity, clip-path;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-arabic-write-cycle {
+    animation: none !important;
+    clip-path: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+}
+
 html, body {
   max-width: 100vw;
   overflow-x: hidden;
