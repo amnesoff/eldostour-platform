@@ -73,6 +73,8 @@ export function SubjectsManager({
   const [editVideoUrl, setEditVideoUrl] = useState('');
   const [editVideoFile, setEditVideoFile] = useState<File | null>(null);
   const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const [editError, setEditError] = useState('');
+  const [editProgress, setEditProgress] = useState(0);
 
   const loadCovers = useCallback(async () => {
     try {
@@ -82,6 +84,10 @@ export function SubjectsManager({
         for (const cov of res.covers as SubjectCover[]) {
           if (cov.subject_id) {
             map[cov.subject_id] = cov;
+          }
+          // Fallback key by year::name so legacy covers without subject_id also show up
+          if (cov.subject_name && cov.year) {
+            map[`${cov.year}::${cov.subject_name.trim()}`] = cov;
           }
         }
         setCoversMap(map);
@@ -96,7 +102,7 @@ export function SubjectsManager({
   }, [loadCovers, subjects.length]);
 
   const handleOpenEditSubject = (sub: Subject) => {
-    const cov = coversMap[sub.id];
+    const cov = coversMap[sub.id] || coversMap[`${sub.year}::${sub.name.trim()}`];
     setEditingSubject(sub);
     setEditName(sub.name);
     setEditYear(sub.year);
@@ -104,6 +110,8 @@ export function SubjectsManager({
     setEditCoverFile(null);
     setEditVideoUrl(cov?.preview_video_url || '');
     setEditVideoFile(null);
+    setEditError('');
+    setEditProgress(0);
     setError('');
   };
 
@@ -111,22 +119,32 @@ export function SubjectsManager({
     e.preventDefault();
     if (!editingSubject || !editName.trim()) return;
     setIsSavingEdit(true);
+    setEditError('');
+    setEditProgress(0);
     setError('');
     setSuccess('');
 
     try {
-      let finalCoverUrl = editCoverUrl;
-      let finalVideoUrl = editVideoUrl;
+      let finalCoverUrl = editCoverUrl.startsWith('blob:') ? '' : editCoverUrl;
+      let finalVideoUrl = editVideoUrl.startsWith('blob:') ? '' : editVideoUrl;
 
       if (editCoverFile) {
-        const imgRes = await uploadSubjectCoverImage(editCoverFile, editYear);
+        const imgRes = await uploadSubjectCoverImage(editCoverFile, editYear, (p) =>
+          setEditProgress(Math.round(p * (editVideoFile ? 0.45 : 0.9)))
+        );
+        if (!imgRes?.publicUrl) throw new Error('فشل رفع صورة الغلاف للسحابة');
         finalCoverUrl = imgRes.publicUrl;
       }
 
       if (editVideoFile) {
-        const vidRes = await uploadSubjectPreviewVideo(editVideoFile, editYear);
+        const vidRes = await uploadSubjectPreviewVideo(editVideoFile, editYear, (p) =>
+          setEditProgress(Math.round((editCoverFile ? 45 : 0) + p * (editCoverFile ? 0.45 : 0.9)))
+        );
+        if (!vidRes?.publicUrl) throw new Error('فشل رفع فيديو الأنيميشن للسحابة');
         finalVideoUrl = vidRes.publicUrl;
       }
+
+      setEditProgress(95);
 
       const res = await adminSaveSubjectDirect({
         subjectId: editingSubject.id,
@@ -140,13 +158,16 @@ export function SubjectsManager({
         throw new Error(res?.error || 'فشل حفظ تعديلات المادة');
       }
 
+      setEditProgress(100);
       setSuccess(`تم حفظ مادة "${editName.trim()}" ووسائطها بنجاح!`);
       setEditingSubject(null);
       await loadCovers();
       onRefresh();
       setTimeout(() => setSuccess(''), 3500);
     } catch (err: any) {
-      setError(err?.message || 'حدث خطأ أثناء حفظ تعديلات المادة');
+      const msg = err?.message || 'حدث خطأ أثناء حفظ تعديلات المادة';
+      setEditError(msg);
+      setError(msg);
     } finally {
       setIsSavingEdit(false);
     }
@@ -467,7 +488,7 @@ export function SubjectsManager({
                     const scheduleInfo = SCHEDULE_SUBJECTS.find(
                       (item) => item.year === sub.year && item.name.trim() === sub.name.trim()
                     );
-                    const cov = coversMap[sub.id];
+                    const cov = coversMap[sub.id] || coversMap[`${sub.year}::${sub.name.trim()}`];
 
                     return (
                       <div
@@ -658,6 +679,28 @@ export function SubjectsManager({
                     className="w-full text-xs text-slate-400 file:mr-0 file:ml-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-blue-600 file:text-white hover:file:bg-blue-700 cursor-pointer"
                   />
                 </div>
+
+                {isSavingEdit && (
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between text-[11px] font-bold text-amber-400">
+                      <span>جاري رفع الوسائط وحفظ التعديلات...</span>
+                      <span>{editProgress}%</span>
+                    </div>
+                    <div className="w-full h-2 rounded-full bg-slate-800 overflow-hidden">
+                      <div
+                        className="h-full bg-amber-500 transition-all duration-300"
+                        style={{ width: `${editProgress}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {editError && (
+                  <div className="flex items-center gap-2 p-3 rounded-xl bg-red-500/15 border border-red-500/30 text-red-300 text-xs font-bold">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span>{editError}</span>
+                  </div>
+                )}
 
                 <div className="flex items-center justify-end gap-2.5 pt-2">
                   <button

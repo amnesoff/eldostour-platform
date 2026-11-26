@@ -1303,30 +1303,51 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ success: false, error: subErr.message }, { status: 500 });
       }
 
+      // Reject transient browser blob: URLs
+      const safeCoverUrl =
+        typeof cover_image_url === 'string' && cover_image_url.startsWith('blob:')
+          ? ''
+          : cover_image_url;
+      const safeVideoUrl =
+        typeof preview_video_url === 'string' && preview_video_url.startsWith('blob:')
+          ? ''
+          : preview_video_url;
+
       // Sync cover image / animation video into subject_covers if media was provided or already exists
-      const { data: existingCover } = await supabaseAdmin
+      let { data: existingCover } = await supabaseAdmin
         .from('subject_covers')
         .select('*')
         .eq('subject_id', subjectId)
         .maybeSingle();
 
+      if (!existingCover) {
+        const byName = await supabaseAdmin
+          .from('subject_covers')
+          .select('*')
+          .eq('year', numYear)
+          .eq('subject_name', cleanName)
+          .limit(1)
+          .maybeSingle();
+        existingCover = byName.data || null;
+      }
+
       const hasMediaInput =
-        cover_image_url !== undefined || preview_video_url !== undefined;
+        safeCoverUrl !== undefined || safeVideoUrl !== undefined;
 
       let savedCover = existingCover || null;
 
-      if (existingCover || (hasMediaInput && (cover_image_url || preview_video_url))) {
+      if (existingCover || (hasMediaInput && (safeCoverUrl || safeVideoUrl))) {
         const coverPayload = {
           subject_id: subjectId,
           subject_name: cleanName,
           year: numYear,
           cover_image_url:
-            cover_image_url !== undefined
-              ? cover_image_url
+            safeCoverUrl !== undefined
+              ? safeCoverUrl
               : existingCover?.cover_image_url || '',
           preview_video_url:
-            preview_video_url !== undefined
-              ? preview_video_url
+            safeVideoUrl !== undefined
+              ? safeVideoUrl
               : existingCover?.preview_video_url || '',
           professor_name: existingCover?.professor_name || '',
           description: existingCover?.description || '',
@@ -1340,7 +1361,7 @@ export async function POST(req: NextRequest) {
             .select()
             .single();
           if (covErr) {
-            return NextResponse.json({ success: false, error: covErr.message }, { status: 500 });
+            return NextResponse.json({ success: false, error: `فشل حفظ الوسائط: ${covErr.message}` }, { status: 500 });
           }
           savedCover = updCov;
         } else {
@@ -1350,7 +1371,7 @@ export async function POST(req: NextRequest) {
             .select()
             .single();
           if (covErr) {
-            return NextResponse.json({ success: false, error: covErr.message }, { status: 500 });
+            return NextResponse.json({ success: false, error: `فشل حفظ الوسائط: ${covErr.message}` }, { status: 500 });
           }
           savedCover = insCov;
         }
