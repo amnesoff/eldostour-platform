@@ -66,10 +66,10 @@ export const TEAM_CREDITS: TeamMember[] = [
     iconName: 'ShieldCheck',
   },
   {
-    role: 'مشرف عام',
+    role: 'مشرف إداري',
     name: 'ندى زيد',
-    description: 'المشرف العام ومتابعة الجودة الأكاديمية وتنسيق الفرق الدراسية',
-    iconName: 'Award',
+    description: 'المشرف الإداري ومتابعة الجودة الأكاديمية وتنسيق الفرق الدراسية',
+    iconName: 'ShieldCheck',
   },
 ];
 
@@ -80,7 +80,7 @@ export const DEFAULT_SUPERVISOR_WHATSAPP_LIST: SupervisorWhatsAppEntry[] = [
   { name: 'رحمة علاء', role: 'المشرف العام', phone: '', enabled: true },
   { name: 'وليد محرم', role: 'مشرف إداري', phone: '', enabled: true },
   { name: 'يوسف عمرو', role: 'مشرف إداري', phone: '', enabled: true },
-  { name: 'ندى زيد', role: 'مشرف عام', phone: '', enabled: true },
+  { name: 'ندى زيد', role: 'مشرف إداري', phone: '', enabled: true },
 ];
 
 export const DEFAULT_GRANULAR_PERMISSIONS: GranularPermissions = {

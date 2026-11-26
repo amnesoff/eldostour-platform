@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Crown, Award, ShieldCheck, Sparkles } from 'lucide-react';
+import { ShieldCheck, Sparkles } from 'lucide-react';
 
 interface TeamCreditsShowcaseProps {
   compact?: boolean;
@@ -23,9 +23,9 @@ export function TeamCreditsShowcase({
       } shadow-xl`}
       dir="rtl"
     >
-      {/* Row 1: مازن شكري & رحمة علاء (No hearts anywhere) */}
-      <div className="relative z-10 grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-3 mb-3">
-        {/* 1. مازن شكري — المؤسس (Soft Crimson/Red Glow) */}
+      {/* Row 1: مازن شكري & رحمة علاء (Larger scale, Burgundy + Gold styling, Continuous Golden Backlight Glow) */}
+      <div className="relative z-10 grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 mb-3.5">
+        {/* 1. مازن شكري — المؤسس */}
         <div
           style={
             staggered
@@ -34,18 +34,26 @@ export function TeamCreditsShowcase({
                 }
               : undefined
           }
-          className="flex items-center justify-between sm:justify-center gap-2.5 px-3.5 py-2.5 rounded-xl bg-red-950/35 border border-red-500/45 shadow-[0_0_16px_rgba(239,68,68,0.3)]"
+          className="relative overflow-hidden flex items-center justify-center px-4 py-3.5 sm:py-4 rounded-2xl bg-gradient-to-br from-[#5b1024] via-[#3a0916] to-[#20050d] border-2 border-amber-400/70 shadow-[0_0_24px_rgba(245,158,11,0.42)]"
         >
-          <Crown className="w-4 h-4 text-red-400 shrink-0" />
-          <div className="text-right sm:text-center">
-            <span className="block text-sm sm:text-base font-black text-red-400 drop-shadow-[0_0_8px_rgba(239,68,68,0.85)]">
-              مازن شكري
+          {/* Continuous Golden Backlight Glow */}
+          <div
+            aria-hidden="true"
+            className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(251,191,36,0.22)_0%,transparent_72%)] animate-pulse motion-reduce:animate-none pointer-events-none"
+          />
+          <div className="relative z-10 text-center">
+            <span className="inline-flex items-center justify-center gap-1.5 text-base sm:text-lg font-black text-amber-300 drop-shadow-[0_0_10px_rgba(251,191,36,0.9)]">
+              <span aria-hidden="true" className="text-sm sm:text-base">👑👑</span>
+              <span>مازن شكري</span>
+              <span aria-hidden="true" className="text-sm sm:text-base">👑👑</span>
             </span>
-            <span className="block text-[10px] font-bold text-red-200/90">المؤسس</span>
+            <span className="block text-[11px] sm:text-xs font-extrabold text-amber-200/95 mt-0.5">
+              المؤسس
+            </span>
           </div>
         </div>
 
-        {/* 2. رحمة علاء — المشرف العام (Soft Crimson/Red Glow) */}
+        {/* 2. رحمة علاء — المشرف العام */}
         <div
           style={
             staggered
@@ -54,21 +62,29 @@ export function TeamCreditsShowcase({
                 }
               : undefined
           }
-          className="flex items-center justify-between sm:justify-center gap-2.5 px-3.5 py-2.5 rounded-xl bg-red-950/35 border border-red-500/45 shadow-[0_0_16px_rgba(239,68,68,0.3)]"
+          className="relative overflow-hidden flex items-center justify-center px-4 py-3.5 sm:py-4 rounded-2xl bg-gradient-to-br from-[#5b1024] via-[#3a0916] to-[#20050d] border-2 border-amber-400/70 shadow-[0_0_24px_rgba(245,158,11,0.42)]"
         >
-          <Award className="w-4 h-4 text-red-400 shrink-0" />
-          <div className="text-right sm:text-center">
-            <span className="block text-sm sm:text-base font-black text-red-400 drop-shadow-[0_0_8px_rgba(239,68,68,0.85)]">
-              رحمة علاء
+          {/* Continuous Golden Backlight Glow */}
+          <div
+            aria-hidden="true"
+            className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(251,191,36,0.22)_0%,transparent_72%)] animate-pulse motion-reduce:animate-none pointer-events-none"
+          />
+          <div className="relative z-10 text-center">
+            <span className="inline-flex items-center justify-center gap-1.5 text-base sm:text-lg font-black text-amber-300 drop-shadow-[0_0_10px_rgba(251,191,36,0.9)]">
+              <span aria-hidden="true" className="text-rose-400 text-sm sm:text-base">♥</span>
+              <span>رحمة علاء</span>
+              <span aria-hidden="true" className="text-rose-400 text-sm sm:text-base">♥</span>
             </span>
-            <span className="block text-[10px] font-bold text-red-200/90">المشرف العام</span>
+            <span className="block text-[11px] sm:text-xs font-extrabold text-amber-200/95 mt-0.5">
+              المشرف العام
+            </span>
           </div>
         </div>
       </div>
 
-      {/* Row 2: وليد محرم & يوسف عمرو & ندى زيد (All Gold Glow + Write/Fade Animation) */}
+      {/* Row 2: وليد محرم & يوسف عمرو & ندى زيد (All مشرف إداري, Gold Glow + Write-in/Disappear Animation) */}
       <div className="relative z-10 grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-        {/* 3. وليد محرم — مشرف إداري (Gold Glow + Write/Fade Animation) */}
+        {/* 3. وليد محرم — مشرف إداري */}
         <div
           style={
             staggered
@@ -92,7 +108,7 @@ export function TeamCreditsShowcase({
           </div>
         </div>
 
-        {/* 4. يوسف عمرو — مشرف إداري (Gold Glow + Write/Fade Animation) */}
+        {/* 4. يوسف عمرو — مشرف إداري */}
         <div
           style={
             staggered
@@ -117,7 +133,7 @@ export function TeamCreditsShowcase({
           </div>
         </div>
 
-        {/* 5. ندى زيد — مشرف عام (Gold Glow + Write/Fade Animation + Subtle Stars) */}
+        {/* 5. ندى زيد — مشرف إداري (Gold Glow + Write-in/Disappear Animation + Subtle Stars, Zero Hearts) */}
         <div
           style={
             staggered
@@ -140,7 +156,7 @@ export function TeamCreditsShowcase({
               <span>ندى زيد</span>
               <span className="text-amber-300 animate-pulse motion-reduce:animate-none text-[10px]">✦</span>
             </span>
-            <span className="block text-[10px] font-bold text-amber-200/90">مشرف عام</span>
+            <span className="block text-[10px] font-bold text-amber-200/90">مشرف إداري</span>
           </div>
         </div>
       </div>
