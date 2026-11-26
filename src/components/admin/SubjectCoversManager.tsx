@@ -249,8 +249,8 @@ export function SubjectCoversManager({ subjects, onRefresh }: SubjectCoversManag
       return;
     }
 
-    if (!coverImageFile && !coverImageUrl) {
-      setError('يرجى رفع صورة غلاف للمادة أو إدخال رابط الصورة');
+    if (!coverImageFile && !coverImageUrl && !previewVideoFile && !previewVideoUrl) {
+      setError('يرجى رفع صورة غلاف أو فيديو أنيميشن للمادة (أو إدخال رابط مباشر)');
       return;
     }
 
@@ -287,10 +287,10 @@ export function SubjectCoversManager({ subjects, onRefresh }: SubjectCoversManag
         subject_name: subjectName.trim(),
         year: selectedYear,
         subject_id: selectedSubjectId || null,
-        cover_image_url: finalCoverUrl,
-        professor_name: professorName.trim(),
-        description: description.trim(),
-        preview_video_url: finalVideoUrl,
+        cover_image_url: finalCoverUrl || '',
+        professor_name: professorName.trim() || '',
+        description: description.trim() || '',
+        preview_video_url: finalVideoUrl || '',
       };
 
       if (finalCoverStoragePath) coverPayload.cover_image_storage_path = finalCoverStoragePath;
@@ -710,19 +710,22 @@ export function SubjectCoversManager({ subjects, onRefresh }: SubjectCoversManag
               <div className="flex items-center justify-between">
                 <label className="text-xs font-bold text-amber-400 flex items-center gap-1.5">
                   <Upload className="w-4 h-4" />
-                  <span>صورة الغلاف / البوستر (Thumbnail) *:</span>
+                  <span>صورة الغلاف / البوستر (Thumbnail):</span>
                 </label>
-                <span className="text-[10px] text-slate-400">16:9 موصى به</span>
+                <span className="text-[10px] text-slate-400">16:9 أو حسب التصميم المرفوع</span>
               </div>
 
-              {coverImageUrl && !coverImageFile && (
+              {coverImageUrl && (
                 <div className="relative w-full h-32 rounded-xl overflow-hidden bg-slate-950 border border-slate-700">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={coverImageUrl} alt="Cover Preview" className="w-full h-full object-cover" />
                   <button
                     type="button"
-                    onClick={() => setCoverImageUrl('')}
-                    className="absolute top-2 left-2 p-1 rounded-lg bg-red-600 text-white text-xs"
+                    onClick={() => {
+                      setCoverImageUrl('');
+                      setCoverImageFile(null);
+                    }}
+                    className="absolute top-2 left-2 p-1 rounded-lg bg-red-600 text-white text-xs cursor-pointer"
                     title="إزالة الصورة"
                   >
                     <X className="w-3.5 h-3.5" />

@@ -24,40 +24,27 @@ export function SubjectCoverCard({ cover, onClick }: SubjectCoverCardProps) {
   const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const mobileTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Desktop Hover Handler (~1 second delay like YouTube)
-  const handleMouseEnter = () => {
-    if (!cover.preview_video_url) return;
-    if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+  // Auto-start video cleanly on mount when preview_video_url is present
+  useEffect(() => {
+    if (!cover.preview_video_url || !videoRef.current) return;
+    videoRef.current
+      .play()
+      .then(() => setIsVideoPlaying(true))
+      .catch(() => setIsVideoPlaying(false));
+  }, [cover.preview_video_url]);
 
-    hoverTimeoutRef.current = setTimeout(() => {
-      if (videoRef.current) {
-        videoRef.current
-          .play()
-          .then(() => {
-            setIsVideoPlaying(true);
-          })
-          .catch(() => {
-            // Guardrail: Safe media playback handler
-            setIsVideoPlaying(false);
-          });
-      }
-    }, 1000);
+  const handleMouseEnter = () => {
+    if (!cover.preview_video_url || !videoRef.current) return;
+    if (videoRef.current.paused) {
+      videoRef.current
+        .play()
+        .then(() => setIsVideoPlaying(true))
+        .catch(() => {});
+    }
   };
 
   const handleMouseLeave = () => {
-    if (hoverTimeoutRef.current) {
-      clearTimeout(hoverTimeoutRef.current);
-      hoverTimeoutRef.current = null;
-    }
-    if (videoRef.current) {
-      videoRef.current.pause();
-      try {
-        videoRef.current.currentTime = 0;
-      } catch {
-        // ignore
-      }
-    }
-    setIsVideoPlaying(false);
+    // Keep animation video running smoothly as-is
   };
 
   // Mobile / Touch Handler (IntersectionObserver ~1.5 - 2s delay when centered)
@@ -129,29 +116,30 @@ export function SubjectCoverCard({ cover, onClick }: SubjectCoverCardProps) {
     >
       {/* 16:9 Thumbnail & Animated Preview Video Layer */}
       <div className="relative w-full aspect-video bg-slate-950 overflow-hidden">
-        {/* Static Cover Image */}
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={cover.cover_image_url}
-          alt={cover.subject_name}
-          className={`w-full h-full object-cover transition-transform duration-500 ease-out ${
-            isVideoPlaying ? 'scale-100' : 'group-hover:scale-105'
-          }`}
-          loading="lazy"
-        />
+        {/* Static Cover Image (shown when no animation video or as poster fallback) */}
+        {cover.cover_image_url && !cover.preview_video_url && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={cover.cover_image_url}
+            alt={cover.subject_name}
+            className="w-full h-full object-cover transition-transform duration-500 ease-out group-hover:scale-105"
+            loading="lazy"
+          />
+        )}
 
-        {/* YouTube-Style Hover Preview Video */}
+        {/* Direct Uploaded Animation Video (auto-plays smoothly on the cover as-is) */}
         {cover.preview_video_url && (
           <video
             ref={videoRef}
             src={cover.preview_video_url}
+            poster={cover.cover_image_url || undefined}
+            autoPlay
             playsInline
             muted
             loop
-            preload="metadata"
-            className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-700 pointer-events-none ${
-              isVideoPlaying ? 'opacity-100 z-10' : 'opacity-0 z-0'
-            }`}
+            preload="auto"
+            onPlay={() => setIsVideoPlaying(true)}
+            className="w-full h-full object-cover pointer-events-none"
           />
         )}
 
