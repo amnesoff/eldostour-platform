@@ -18,62 +18,9 @@ import {
 import { supabase } from '@/lib/supabase';
 import { LegalStory } from '@/types';
 
-// Default curated legal stories if database has none
-const DEFAULT_STORIES: LegalStory[] = [
-  {
-    id: 'story-1',
-    title: 'مبدأ الشرعية الجنائية',
-    category: 'قانون جنائي ⚖️',
-    caption: 'لا جريمة ولا عقوبة إلا بنص قانوني سابق على ارتكاب الفعل، وهو صمام أمان الحرية الفردية وحصن المواطن المنيع.',
-    media_url: 'https://images.unsplash.com/photo-1589829545856-d10d557cf95f?auto=format&fit=crop&w=1200&q=80',
-    media_type: 'image',
-    is_active: true,
-    created_at: new Date().toISOString(),
-  },
-  {
-    id: 'story-2',
-    title: 'العقد شريعة المتعاقدين',
-    category: 'قانون مدني 📜',
-    caption: 'القوة الملزمة للعقد تجعل بنوده قانوناً خاصاً يربط عاقديه ولا يجوز نقضه أو تعديله إلا باتفاقهما أو للأسباب المقررة قانوناً.',
-    media_url: 'https://images.unsplash.com/photo-1450133064473-71024230f91b?auto=format&fit=crop&w=1200&q=80',
-    media_type: 'image',
-    is_active: true,
-    created_at: new Date().toISOString(),
-  },
-  {
-    id: 'story-3',
-    title: 'القرائن القضائية والقاطعة',
-    category: 'قانون إثبات 🔍',
-    caption: 'القرينة القانونية تعفي من تقررت لمصلحته من عبء الإثبات، وتعد وسيلة تشريعية بارعة لتحقيق التوازن بين الخصوم.',
-    media_url: 'https://images.unsplash.com/photo-1453728013993-6d66e9c9123a?auto=format&fit=crop&w=1200&q=80',
-    media_type: 'image',
-    is_active: true,
-    created_at: new Date().toISOString(),
-  },
-  {
-    id: 'story-4',
-    title: 'سمو القواعد الدستورية',
-    category: 'قانون دستوري 🏛️',
-    caption: 'الدستور هو القانون الأسمى الذي يعلو ولا يعلى عليه، وتخضع لسلطانه كافة التشريعات واللوائح دون استثناء.',
-    media_url: 'https://images.unsplash.com/photo-1505664194779-8beaceb93744?auto=format&fit=crop&w=1200&q=80',
-    media_type: 'image',
-    is_active: true,
-    created_at: new Date().toISOString(),
-  },
-  {
-    id: 'story-5',
-    title: 'نصيحة التفوق الأكاديمي',
-    category: 'توجيهات الدستور ✨',
-    caption: 'دراسة القانون فن ومنطق وتحليل وليست مجرد حفظ للنصوص؛ ركز على علل الأحكام وفلسفة التشريع تكن من الأوائل دائماً.',
-    media_url: 'https://images.unsplash.com/photo-1434030216411-0b793f4b4173?auto=format&fit=crop&w=1200&q=80',
-    media_type: 'image',
-    is_active: true,
-    created_at: new Date().toISOString(),
-  },
-];
-
 export function LegalStoriesBar() {
-  const [stories, setStories] = useState<LegalStory[]>(DEFAULT_STORIES);
+  const [stories, setStories] = useState<LegalStory[]>([]);
+  const [isLoaded, setIsLoaded] = useState(false);
   const [activeStoryIndex, setActiveStoryIndex] = useState<number | null>(null);
   const [readStoryIds, setReadStoryIds] = useState<Set<string>>(new Set());
   const [progress, setProgress] = useState(0);
@@ -93,25 +40,45 @@ export function LegalStoriesBar() {
     }
   }, []);
 
-  // Fetch dynamic stories from Supabase
+  // Fetch live stories from public.legal_stories with zero stale caching + Realtime sync
   useEffect(() => {
+    let isMounted = true;
+
     const fetchStories = async () => {
       try {
-        const { data, error } = await supabase
-          .from('legal_stories')
-          .select('*')
-          .eq('is_active', true)
-          .order('created_at', { ascending: false });
-
-        if (!error && data && data.length > 0) {
-          setStories(data as LegalStory[]);
+        const res = await fetch(`/api/stories?t=${Date.now()}`, {
+          cache: 'no-store',
+        });
+        const json = await res.json();
+        if (isMounted && json?.success && Array.isArray(json.stories)) {
+          setStories(json.stories as LegalStory[]);
+        } else if (isMounted) {
+          setStories([]);
         }
       } catch {
-        // Keep defaults if table does not exist or offline
+        if (isMounted) setStories([]);
+      } finally {
+        if (isMounted) setIsLoaded(true);
       }
     };
 
     fetchStories();
+
+    const channel = supabase
+      .channel('public_legal_stories_sync')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'legal_stories' },
+        () => {
+          fetchStories();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      isMounted = false;
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   // Story Timer & Progress Bar (5 seconds per story)
@@ -186,6 +153,11 @@ export function LegalStoriesBar() {
   };
 
   const currentStory = activeStoryIndex !== null ? stories[activeStoryIndex] : null;
+
+  // Hide stories bar completely if there are 0 active real stories
+  if (!isLoaded || stories.length === 0) {
+    return null;
+  }
 
   return (
     <>

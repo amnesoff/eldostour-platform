@@ -397,7 +397,7 @@ export function LegalStoriesManager({ onRefresh }: LegalStoriesManagerProps) {
           </div>
         ) : stories.length === 0 ? (
           <div className="py-8 text-center text-slate-500 text-xs">
-            لا توجد استوريات مخصصة مرفوعة حالياً. تعرض المنصة الاستوريات القانونية الافتراضية.
+            لا توجد استوريات منشورة حالياً. عند نشر أول استوري سيظهر فوراً للطلاب في الواجهة الرئيسية.
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
