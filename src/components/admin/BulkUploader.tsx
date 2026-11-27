@@ -74,7 +74,7 @@ export function BulkUploader({ subjects, onUploadSuccess }: BulkUploaderProps) {
         file.type.includes('pdf') || file.name.toLowerCase().endsWith('.pdf');
       const isVideo =
         file.type.includes('video') ||
-        ['.mp4', '.webm', '.mkv', '.mov'].some((ext) =>
+        ['.mp4', '.webm', '.mkv', '.mov', '.m4v', '.avi'].some((ext) =>
           file.name.toLowerCase().endsWith(ext)
         );
 
@@ -319,7 +319,7 @@ export function BulkUploader({ subjects, onUploadSuccess }: BulkUploaderProps) {
           ref={fileInputRef}
           type="file"
           multiple
-          accept=".pdf,video/mp4,video/webm,video/mkv,video/quicktime,video/*"
+          accept=".pdf,video/*,.mp4,.webm,.mkv,.mov,.m4v,.avi"
           className="hidden"
           onChange={(e) => handleFilesSelected(e.target.files)}
         />

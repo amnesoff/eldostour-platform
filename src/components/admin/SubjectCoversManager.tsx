@@ -259,9 +259,9 @@ export function SubjectCoversManager({ subjects, onRefresh }: SubjectCoversManag
     setSuccess('');
 
     try {
-      let finalCoverUrl = coverImageUrl;
+      let finalCoverUrl = coverImageUrl.startsWith('blob:') ? '' : coverImageUrl;
       let finalCoverStoragePath = '';
-      let finalVideoUrl = previewVideoUrl;
+      let finalVideoUrl = previewVideoUrl.startsWith('blob:') ? '' : previewVideoUrl;
       let finalVideoStoragePath = '';
 
       // 1. Upload Cover Image if a new file is chosen

@@ -42,6 +42,87 @@ function hasGranularPermission(
   return Boolean(admin.permissions?.can_manage_content);
 }
 
+const TABLE_ALLOWED_COLUMNS: Record<string, Set<string>> = {
+  legal_stories: new Set(['title', 'media_url', 'media_type', 'category', 'caption', 'is_active']),
+  subjects: new Set(['name', 'year']),
+  subject_covers: new Set([
+    'subject_name',
+    'year',
+    'subject_id',
+    'cover_image_url',
+    'cover_image_storage_path',
+    'preview_video_url',
+    'preview_video_storage_path',
+    'professor_name',
+    'description',
+    'order_index',
+  ]),
+  materials: new Set([
+    'title',
+    'description',
+    'file_type',
+    'file_url',
+    'storage_path',
+    'year',
+    'subject_id',
+    'file_size',
+    'likes_count',
+    'is_cram',
+    'read_time_minutes',
+    'views_count',
+    'category',
+    'cover_id',
+  ]),
+};
+
+function sanitizePayloadRow(table: string, row: any): Record<string, any> {
+  if (!row || typeof row !== 'object') return {};
+  const allowed = TABLE_ALLOWED_COLUMNS[table];
+  const clean: Record<string, any> = {};
+  for (const [k, v] of Object.entries(row)) {
+    if (v === undefined) continue;
+    if (allowed && !allowed.has(k)) continue;
+    clean[k] = v;
+  }
+  return clean;
+}
+
+function sanitizeTablePayload(table: string, payload: any): any {
+  if (Array.isArray(payload)) {
+    return payload.map((row) => sanitizePayloadRow(table, row));
+  }
+  return sanitizePayloadRow(table, payload);
+}
+
+function formatPostgrestError(table: string, error: any): string {
+  const msg = String(error?.message || '');
+  const code = String(error?.code || '');
+  const isMissingTable =
+    code === 'PGRST205' ||
+    code === '42P01' ||
+    msg.includes('Could not find the table') ||
+    msg.includes('does not exist');
+
+  if (isMissingTable) {
+    if (table === 'legal_stories') {
+      return `جدول الاستوريات القانونية (public.legal_stories) غير موجود أو ذاكرة المخطط (Schema Cache) في Supabase غير محدثة. يرجى تنفيذ ملف supabase_schema.sql أو تشغيل الأمر: NOTIFY pgrst, 'reload schema'; في محرر SQL.`;
+    }
+    return `الجدول (public.${table}) غير موجود أو ذاكرة المخطط في Supabase غير محدثة. يرجى تشغيل NOTIFY pgrst, 'reload schema'; في Supabase SQL Editor.`;
+  }
+
+  const isMissingColumn =
+    code === 'PGRST204' ||
+    code === '42703' ||
+    msg.includes('Could not find the') ||
+    msg.includes('schema cache');
+
+  if (isMissingColumn) {
+    return `تعذر حفظ البيانات في (${table}) بسبب اختلاف أو قدم ذاكرة الأعمدة (Schema Cache): ${msg}. يرجى تشغيل NOTIFY pgrst, 'reload schema'; في Supabase.`;
+  }
+
+  return msg || 'حدث خطأ غير متوقع في قاعدة البيانات';
+}
+
 function hashSha256(str: string): string {
   return crypto.createHash('sha256').update(str).digest('hex');
 }
@@ -156,10 +237,12 @@ export async function authenticateAdmin(req: NextRequest): Promise<AdminSession 
             ...permissions,
             granular: FOUNDER_FULL_PERMISSIONS,
           };
-        } else if (!permissions.granular && tokenPayload.username) {
+        } else if (tokenPayload.username) {
+          // Always resolve live supervisor granular permissions so updates by the Founder apply immediately
+          const liveGranular = await getSupervisorGranularPermissions(tokenPayload.username);
           permissions = {
             ...permissions,
-            granular: await getSupervisorGranularPermissions(tokenPayload.username),
+            granular: liveGranular || permissions.granular,
           };
         }
 
@@ -1258,6 +1341,29 @@ export async function POST(req: NextRequest) {
     // -------------------------------------------------------------
     // 10C. DIRECT SUBJECT EDIT WITH IMAGE & VIDEO MEDIA
     // -------------------------------------------------------------
+    if (action === 'get_legal_stories') {
+      if (!admin.is_super_admin && !hasGranularPermission(admin, 'stories', 'view')) {
+        return NextResponse.json({ success: false, error: 'غير مصرح بعرض الاستوريات القانونية' }, { status: 403 });
+      }
+
+      const { data: stories, error: storiesErr } = await supabaseAdmin
+        .from('legal_stories')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (storiesErr) {
+        return NextResponse.json(
+          { success: false, error: formatPostgrestError('legal_stories', storiesErr) },
+          { status: 500 }
+        );
+      }
+
+      return NextResponse.json({
+        success: true,
+        stories: stories || [],
+      });
+    }
+
     if (action === 'get_subjects_with_covers') {
       const [subsRes, covsRes] = await Promise.all([
         supabaseAdmin.from('subjects').select('*').order('name', { ascending: true }),
@@ -1279,6 +1385,7 @@ export async function POST(req: NextRequest) {
       if (
         !admin.is_super_admin &&
         !hasGranularPermission(admin, 'materials', 'edit') &&
+        !hasGranularPermission(admin, 'materials', 'add') &&
         !hasGranularPermission(admin, 'materials', 'bundles')
       ) {
         return NextResponse.json({ success: false, error: 'غير مصرح بتعديل المواد الدراسية' }, { status: 403 });
@@ -1457,16 +1564,20 @@ export async function POST(req: NextRequest) {
         }
       }
 
+      const cleanData = data !== undefined ? sanitizeTablePayload(table, data) : data;
+
       if (mutation === 'insert') {
         const { data: created, error } = await supabaseAdmin
           .from(table)
-          .insert(data)
+          .insert(cleanData)
           .select();
 
-        if (error) return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+        if (error) {
+          return NextResponse.json({ success: false, error: formatPostgrestError(table, error) }, { status: 500 });
+        }
         return NextResponse.json({
           success: true,
-          data: Array.isArray(data) ? stripSensitiveFields(created) : stripSensitiveFields(created?.[0]),
+          data: Array.isArray(cleanData) ? stripSensitiveFields(created) : stripSensitiveFields(created?.[0]),
         });
       }
 
@@ -1474,18 +1585,20 @@ export async function POST(req: NextRequest) {
         const upsertOptions = table === 'site_settings' ? { onConflict: 'key' } : undefined;
         const { data: upserted, error } = await supabaseAdmin
           .from(table)
-          .upsert(data, upsertOptions)
+          .upsert(cleanData, upsertOptions)
           .select();
 
-        if (error) return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+        if (error) {
+          return NextResponse.json({ success: false, error: formatPostgrestError(table, error) }, { status: 500 });
+        }
         return NextResponse.json({
           success: true,
-          data: Array.isArray(data) ? stripSensitiveFields(upserted) : stripSensitiveFields(upserted?.[0]),
+          data: Array.isArray(cleanData) ? stripSensitiveFields(upserted) : stripSensitiveFields(upserted?.[0]),
         });
       }
 
       if (mutation === 'update') {
-        let query = supabaseAdmin.from(table).update(data);
+        let query = supabaseAdmin.from(table).update(cleanData);
         if (ids && Array.isArray(ids) && ids.length > 0) {
           query = query.in('id', ids);
         } else if (id) {
@@ -1501,7 +1614,9 @@ export async function POST(req: NextRequest) {
         }
         const { data: updated, error } = await query.select();
 
-        if (error) return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+        if (error) {
+          return NextResponse.json({ success: false, error: formatPostgrestError(table, error) }, { status: 500 });
+        }
         return NextResponse.json({ success: true, data: stripSensitiveFields(updated) });
       }
 
@@ -1522,7 +1637,9 @@ export async function POST(req: NextRequest) {
         }
         const { error } = await query;
 
-        if (error) return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+        if (error) {
+          return NextResponse.json({ success: false, error: formatPostgrestError(table, error) }, { status: 500 });
+        }
         return NextResponse.json({ success: true });
       }
 

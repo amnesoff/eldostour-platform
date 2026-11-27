@@ -224,12 +224,23 @@ export function LegalStoriesBar() {
                   }`}
                 >
                   <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-slate-900 border-2 border-white dark:border-slate-950 overflow-hidden flex items-center justify-center">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={story.media_url}
-                      alt={story.title}
-                      className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
-                    />
+                    {story.media_type === 'video' ? (
+                      <video
+                        src={story.media_url}
+                        muted
+                        loop
+                        autoPlay
+                        playsInline
+                        className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+                      />
+                    ) : (
+                      /* eslint-disable-next-line @next/next/no-img-element */
+                      <img
+                        src={story.media_url}
+                        alt={story.title}
+                        className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+                      />
+                    )}
                   </div>
                 </div>
                 <span className="text-[10px] sm:text-[11px] font-bold text-slate-700 dark:text-slate-300 max-w-[70px] truncate text-center">
@@ -324,12 +335,23 @@ export function LegalStoriesBar() {
                 onTouchEnd={() => setIsPaused(false)}
               >
                 {/* Background Full Media */}
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={currentStory.media_url}
-                  alt={currentStory.title}
-                  className="w-full h-full object-cover"
-                />
+                {currentStory.media_type === 'video' ? (
+                  <video
+                    src={currentStory.media_url}
+                    autoPlay
+                    loop
+                    playsInline
+                    muted
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img
+                    src={currentStory.media_url}
+                    alt={currentStory.title}
+                    className="w-full h-full object-cover"
+                  />
+                )}
 
                 {/* Left/Right Tap Target Overlay */}
                 <div

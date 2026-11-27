@@ -39,7 +39,28 @@ async function adminFetch(endpoint: string, options: RequestInit = {}) {
     credentials: 'include',
   });
 
-  return res.json();
+  const text = await res.text();
+  let parsed: any = null;
+  if (text) {
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      parsed = null;
+    }
+  }
+
+  if (!res.ok) {
+    return {
+      success: false,
+      ...(parsed && typeof parsed === 'object' ? parsed : {}),
+      error:
+        parsed?.error ||
+        parsed?.message ||
+        `تعذر إتمام الطلب من الخادم (${res.status})`,
+    };
+  }
+
+  return parsed ?? { success: true };
 }
 
 export async function adminLoginCredentials(
@@ -117,6 +138,13 @@ export async function adminGetSubjectsWithCovers() {
   return adminFetch('/api/admin/db', {
     method: 'POST',
     body: JSON.stringify({ action: 'get_subjects_with_covers' }),
+  });
+}
+
+export async function adminGetLegalStories() {
+  return adminFetch('/api/admin/db', {
+    method: 'POST',
+    body: JSON.stringify({ action: 'get_legal_stories' }),
   });
 }
 

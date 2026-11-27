@@ -16,9 +16,8 @@ import {
   Check,
 } from 'lucide-react';
 import { LegalStory } from '@/types';
-import { supabase } from '@/lib/supabase';
 import { uploadToCloudStorage } from '@/lib/cloudUpload';
-import { adminDbMutate } from '@/lib/apiClient';
+import { adminDbMutate, adminGetLegalStories } from '@/lib/apiClient';
 
 const CATEGORIES = [
   'نصيحة قانونية ⚖️',
@@ -31,7 +30,11 @@ const CATEGORIES = [
   'توجيهات الدستور ✨',
 ];
 
-export function LegalStoriesManager() {
+interface LegalStoriesManagerProps {
+  onRefresh?: () => void;
+}
+
+export function LegalStoriesManager({ onRefresh }: LegalStoriesManagerProps) {
   const [stories, setStories] = useState<LegalStory[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isAdding, setIsAdding] = useState(false);
@@ -50,16 +53,14 @@ export function LegalStoriesManager() {
   const fetchStories = async () => {
     setIsLoading(true);
     try {
-      const { data, error: fetchErr } = await supabase
-        .from('legal_stories')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (!fetchErr && data) {
-        setStories(data as LegalStory[]);
+      const res = await adminGetLegalStories();
+      if (res?.success && Array.isArray(res.stories)) {
+        setStories(res.stories as LegalStory[]);
+      } else if (res && !res.success) {
+        setError(res.error || 'تعذر تحميل الاستوريات القانونية');
       }
-    } catch {
-      // Ignore
+    } catch (err: any) {
+      setError(err?.message || 'تعذر الاتصال بالخادم لتحميل الاستوريات');
     } finally {
       setIsLoading(false);
     }
@@ -113,8 +114,8 @@ export function LegalStoriesManager() {
       );
 
       const isVideo =
-        mediaFile.type.includes('video') ||
-        ['.mp4', '.webm', '.mov'].some((ext) =>
+        mediaFile.type.startsWith('video/') ||
+        ['.mp4', '.webm', '.mov', '.m4v', '.avi', '.mkv', '.3gp', '.ogv'].some((ext) =>
           mediaFile.name.toLowerCase().endsWith(ext)
         );
 
@@ -132,15 +133,20 @@ export function LegalStoriesManager() {
         },
       });
 
-      if (!mutateRes.success) {
-        throw new Error(mutateRes.error || 'فشل حفظ الاستوري في قاعدة البيانات');
+      if (!mutateRes?.success) {
+        throw new Error(mutateRes?.error || 'فشل حفظ الاستوري في قاعدة البيانات');
+      }
+
+      if (mutateRes.data) {
+        setStories((prev) => [mutateRes.data as LegalStory, ...prev.filter((s) => s.id !== mutateRes.data.id)]);
       }
 
       setSuccess('تم رفع ونشر الاستوري بنجاح عبر التخزين السحابي Cloudinary!');
       setTitle('');
       setCaption('');
       clearSelectedMedia();
-      fetchStories();
+      await fetchStories();
+      onRefresh?.();
 
       setTimeout(() => setSuccess(''), 3000);
     } catch (err: any) {
@@ -154,13 +160,16 @@ export function LegalStoriesManager() {
     if (!confirm(`هل أنت متأكد من حذف استوري "${storyTitle}"؟`)) return;
 
     setDeletingId(id);
+    setError('');
     try {
       const delRes = await adminDbMutate({ table: 'legal_stories', mutation: 'delete', id });
-      if (delRes.success) {
-        setStories((prev) => prev.filter((s) => s.id !== id));
+      if (!delRes?.success) {
+        throw new Error(delRes?.error || 'فشل حذف الاستوري');
       }
-    } catch {
-      alert('فشل حذف الاستوري');
+      setStories((prev) => prev.filter((s) => s.id !== id));
+      onRefresh?.();
+    } catch (err: any) {
+      setError(err?.message || 'فشل حذف الاستوري');
     } finally {
       setDeletingId(null);
     }
@@ -168,6 +177,7 @@ export function LegalStoriesManager() {
 
   const handleToggleStoryActive = async (id: string, currentStatus?: boolean) => {
     const nextVal = !currentStatus;
+    setError('');
     try {
       const updRes = await adminDbMutate({
         table: 'legal_stories',
@@ -176,13 +186,15 @@ export function LegalStoriesManager() {
         data: { is_active: nextVal },
       });
 
-      if (updRes.success) {
-        setStories((prev) =>
-          prev.map((s) => (s.id === id ? { ...s, is_active: nextVal } : s))
-        );
+      if (!updRes?.success) {
+        throw new Error(updRes?.error || 'فشل تغيير حالة الاستوري');
       }
-    } catch {
-      alert('فشل تغيير حالة الاستوري');
+      setStories((prev) =>
+        prev.map((s) => (s.id === id ? { ...s, is_active: nextVal } : s))
+      );
+      onRefresh?.();
+    } catch (err: any) {
+      setError(err?.message || 'فشل تغيير حالة الاستوري');
     }
   };
 
@@ -282,7 +294,7 @@ export function LegalStoriesManager() {
           <input
             type="file"
             ref={fileInputRef}
-            accept="image/*,video/mp4,video/webm"
+            accept="image/*,.jfif,.jpg,.jpeg,.png,.gif,.webp,.avif,.svg,video/*,.mp4,.webm,.mov,.m4v,.avi,.mkv"
             onChange={handleMediaSelect}
             className="hidden"
           />
@@ -295,7 +307,7 @@ export function LegalStoriesManager() {
             >
               <ImageIcon className="w-8 h-8 text-amber-400" />
               <span className="text-xs font-bold">
-                انقر لاختيار صورة أو فيديو (JPG / PNG / WebP / MP4)
+                انقر لاختيار صورة أو فيديو (JPG / JFIF / PNG / GIF / WebP / MP4 / MOV)
               </span>
               <span className="text-[10px] text-slate-500">
                 يتم الرفع سحابياً إلى Cloudinary بنطاق ترددي 25GB مجاني
@@ -303,12 +315,26 @@ export function LegalStoriesManager() {
             </button>
           ) : (
             <div className="relative w-full max-w-xs h-48 rounded-2xl overflow-hidden border border-amber-500/40 bg-black">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={mediaPreview}
-                alt="معاينة"
-                className="w-full h-full object-cover"
-              />
+              {mediaFile?.type.startsWith('video/') ||
+              ['.mp4', '.webm', '.mov', '.m4v', '.avi', '.mkv'].some((ext) =>
+                mediaFile?.name.toLowerCase().endsWith(ext)
+              ) ? (
+                <video
+                  src={mediaPreview}
+                  autoPlay
+                  loop
+                  muted
+                  playsInline
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                /* eslint-disable-next-line @next/next/no-img-element */
+                <img
+                  src={mediaPreview}
+                  alt="معاينة"
+                  className="w-full h-full object-cover"
+                />
+              )}
               <button
                 type="button"
                 onClick={clearSelectedMedia}
@@ -381,12 +407,23 @@ export function LegalStoriesManager() {
                 className="p-3 rounded-2xl bg-slate-950 border border-slate-800 flex items-center gap-3 relative group"
               >
                 <div className="w-14 h-14 rounded-xl overflow-hidden bg-slate-900 border border-slate-700 shrink-0">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={st.media_url}
-                    alt={st.title}
-                    className="w-full h-full object-cover"
-                  />
+                  {st.media_type === 'video' ? (
+                    <video
+                      src={st.media_url}
+                      muted
+                      loop
+                      autoPlay
+                      playsInline
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    /* eslint-disable-next-line @next/next/no-img-element */
+                    <img
+                      src={st.media_url}
+                      alt={st.title}
+                      className="w-full h-full object-cover"
+                    />
+                  )}
                 </div>
 
                 <div className="flex-1 min-w-0">
